@@ -1,0 +1,281 @@
+# Opulence Voice-Controlled Construction Dashboard
+## Development Overview & Context
+
+### 🎯 Project Mission
+Create a voice-first construction project management dashboard that eliminates manual clicking and allows general contractors to manage projects through natural conversation with an AI assistant.
+
+### 📁 Repository Structure
+```
+/
+├── index.html                 # Main dashboard (production file)
+├── public/
+│   └── index.html            # Backup/development version
+├── app/                      # Next.js structure (not currently used)
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── package.json              # Dependencies
+├── tsconfig.json            # TypeScript config
+└── PROJECT_OVERVIEW.md      # This file
+```
+
+### 🏗️ Current Architecture
+
+#### Frontend Stack
+- **Pure HTML/CSS/JavaScript** - No framework dependencies
+- **Vapi.ai Widget** - Voice recognition and AI conversation
+- **Responsive Design** - Works on desktop and mobile
+- **Glassmorphism UI** - Modern, professional aesthetic
+
+#### Voice Integration
+- **Assistant ID**: `d2572015-8bb2-4043-8913-87400a590bc5`
+- **Public Key**: `1f96e572-7a5b-4b45-ba8b-0dc2721ca738`
+- **Provider**: Vapi.ai with GPT-4 + ElevenLabs voice
+- **Mode**: Voice-first with real-time transcription
+
+### 🎪 Dashboard Features
+
+#### Four Main Views
+1. **Project Overview** (`#overview`)
+   - Active projects with status badges
+   - Today's tasks and priorities
+   - Crew status summary
+
+2. **Master Schedule** (`#schedule`) 
+   - Weekly timeline view
+   - Upcoming milestones
+   - Deadline tracking
+
+3. **Crew Management** (`#crew`)
+   - Available crew members
+   - Skills and availability
+   - Subcontractor status
+
+4. **Problem Resolution** (`#problems`)
+   - Active issues requiring attention
+   - Resolution tools and workflows
+   - Priority flagging system
+
+#### Voice Commands Supported
+```javascript
+// Navigation
+"Show me the master schedule"
+"What crew is available?"
+"Are there any problems?"
+
+// Project Queries  
+"Tell me about the Johnson ADU"
+"Show me the Smith kitchen project"
+"What's the status of the Brown bathroom?"
+
+// Crew Information
+"Where is Bob working today?"
+"Is Jeff available?"
+"Who's working on the Johnson ADU?"
+
+// Status Updates
+"What's happening today?"
+"Any delays I need to know about?"
+```
+
+### 🗄️ Data Architecture
+
+#### Current Status: Mock Data
+```javascript
+// Example project structure
+{
+  name: "Johnson ADU Build",
+  address: "225 Willow Creek Way, Olympia, WA", 
+  status: "In Progress",
+  progress: "45% Complete"
+}
+```
+
+#### Target: Real Data Integration
+- **Database**: Airtable (Master Scheduler v1)
+- **Orchestration**: n8n workflows
+- **API Layer**: RESTful endpoints
+- **Real-time Updates**: WebSocket connections (future)
+
+### 🔧 Development Workflow
+
+#### Stage 1: Foundation ✅ COMPLETE
+- [x] Voice widget integration
+- [x] Dashboard navigation system
+- [x] Basic voice command processing
+- [x] Visual feedback mechanisms
+
+#### Stage 2: Data Integration 🚧 IN PROGRESS
+- [ ] Map existing Airtable schema
+- [ ] Create n8n workflows for data access
+- [ ] Build Vapi function tools
+- [ ] Replace mock data with real data
+- [ ] Test voice → data → dashboard flow
+
+#### Stage 3: Advanced Features 📋 PLANNED
+- [ ] Schedule modification via voice
+- [ ] Crew assignment changes
+- [ ] Problem resolution workflows
+- [ ] Real-time notifications
+
+#### Stage 4: Production Ready 🎯 FUTURE
+- [ ] User authentication
+- [ ] Multi-tenant support
+- [ ] Performance optimization
+- [ ] Mobile app companion
+
+### 🛠️ Key Functions & APIs
+
+#### Dashboard Control
+```javascript
+// Core navigation function
+function switchView(viewName) {
+  // Updates active nav, view sections, headers
+  // Logs changes for voice integration
+}
+
+// Voice command processor
+function processAssistantResponse(message) {
+  // Parses AI responses for dashboard actions
+  // Triggers appropriate view changes
+  // Handles project/crew highlighting
+}
+```
+
+#### Voice Integration
+```javascript
+// Vapi widget event handlers
+handleVapiWidgetMessage(data) {
+  // Processes voice widget events
+  // Routes to dashboard control functions
+}
+
+// Status feedback system
+showVoiceStatus(message) {
+  // Displays voice command feedback
+  // Auto-hides after timeout
+}
+```
+
+### 🎨 Styling Architecture
+
+#### CSS Structure
+- **Reset & Base**: Universal box-sizing, font settings
+- **Layout**: Flexbox dashboard with sidebar + main content
+- **Components**: Modular widget, card, and nav styling
+- **Animations**: Smooth transitions, hover effects, view switching
+- **Voice Widget**: Custom styling for Vapi integration
+
+#### Design System
+- **Primary Colors**: `#667eea` to `#764ba2` gradient
+- **Accent**: Teal `#14B8A6` for voice widget
+- **Status Badges**: Green (active), Yellow (pending), Red (delayed)
+- **Typography**: Segoe UI system font stack
+- **Border Radius**: Consistent 12-16px rounded corners
+
+### 🧪 Testing & Development
+
+#### Voice Command Testing
+```bash
+# Test these commands in order:
+1. "Show me the project overview" → Should switch to overview
+2. "Tell me about the Johnson ADU" → Should highlight project
+3. "Where is Bob working today?" → Should switch to crew view
+4. "Are there any problems?" → Should switch to problems view
+```
+
+#### Development Server
+- **GitHub Pages**: Auto-deploy from main branch
+- **URL**: `https://afinnegan67.github.io/nextjs-opulencevoiceagenttestingdashboard`
+- **Update Time**: 2-3 minutes after commit
+
+### 📊 Business Context
+
+#### Target Users
+- **Primary**: General contractors (1-50 employees)
+- **Pain Point**: Complex, button-heavy construction software
+- **Solution**: Voice-first interface matching natural communication
+
+#### Competitive Advantage
+- **First** voice-controlled construction management platform
+- **Reduces** clicks from hundreds to zero per session
+- **Increases** adoption through familiar voice interaction
+- **Eliminates** training time on complex interfaces
+
+### 🔮 Technical Debt & Future Considerations
+
+#### Current Limitations
+- **Static Data**: All information is hard-coded
+- **No Persistence**: Changes don't save between sessions
+- **Limited Commands**: Basic navigation only
+- **No Authentication**: Anyone can access
+
+#### Architecture Decisions
+- **Single HTML File**: Simplifies deployment, harder to maintain long-term
+- **No Framework**: Fast loading, but more manual DOM manipulation
+- **Inline Styles**: Quick development, should be externalized
+- **Mock Data**: Good for prototyping, needs real backend
+
+### 🤝 Integration Points
+
+#### External Services
+1. **Vapi.ai**: Voice recognition and AI conversation
+2. **n8n**: Workflow orchestration (planned)
+3. **Airtable**: Data storage (existing)
+4. **Supabase**: Future database migration
+5. **ElevenLabs**: Text-to-speech (via Vapi)
+
+#### API Endpoints (Planned)
+```
+GET /api/projects - List all projects
+GET /api/projects/{id} - Get project details
+GET /api/crew - List crew availability  
+GET /api/schedule - Get master schedule
+POST /api/schedule/update - Modify schedule
+```
+
+### 🎯 Success Metrics
+
+#### Hackathon Goals
+- **Functionality**: Voice commands control dashboard ✅
+- **Innovation**: Novel voice-first construction interface ✅
+- **Impact**: Demonstrates real business value ✅
+- **Execution**: Polished, working demonstration ✅
+
+#### Business Metrics (Future)
+- **User Adoption**: % of contractors using voice vs clicks
+- **Time Savings**: Minutes saved per project management session
+- **Error Reduction**: Fewer scheduling mistakes
+- **Customer Satisfaction**: Net Promoter Score improvement
+
+### 🚨 Development Notes
+
+#### Known Issues
+- **Browser Compatibility**: Voice widget requires modern browser
+- **Microphone Permissions**: Users must allow microphone access  
+- **Network Dependency**: Requires internet for voice processing
+- **Mobile Experience**: Touch interactions need refinement
+
+#### Best Practices
+- **Always test voice commands** after code changes
+- **Maintain voice-visual consistency** in responses
+- **Keep loading states** for slow network conditions
+- **Graceful fallbacks** when voice recognition fails
+
+### 📞 Emergency Contacts & Resources
+
+#### Key Resources
+- **Vapi Documentation**: https://docs.vapi.ai
+- **n8n Documentation**: https://docs.n8n.io  
+- **Airtable API**: https://airtable.com/developers/web/api
+- **GitHub Repository**: https://github.com/afinnegan67/nextjs-opulencevoiceagenttestingdashboard
+
+#### Development Environment
+- **IDE**: Visual Studio Code recommended
+- **Extensions**: Live Server, Prettier, GitLens
+- **Browser**: Chrome/Edge for best voice recognition
+- **Testing**: Use incognito mode for clean microphone permissions
+
+---
+
+*This overview should provide complete context for any developer (human or AI) working on this project. Update this file as the project evolves.*
