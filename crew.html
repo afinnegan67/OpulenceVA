@@ -2,16 +2,15 @@
   <div class="panel">
     <div class="panel-head">
       <h3>Crew Utilization & Availability</h3>
-      <div class="controls">
-        <input id="crew-search" placeholder="Search crew or skill…" />
-        <select id="crew-sort">
-          <option value="util-desc">Utilization ↓</option>
-          <option value="util-asc">Utilization ↑</option>
-          <option value="free-asc">Next Free (earliest)</option>
-          <option value="name-asc">Name A→Z</option>
-        </select>
-        <button class="btn ghost" onclick="loadDashboard('schedule')">Back to Schedule</button>
-      </div>
+             <div class="controls">
+                  <input id="crew-search" placeholder="Search crew, role, project, skills…" />
+         <select id="crew-sort">
+           <option value="name-asc">Name A→Z</option>
+           <option value="name-desc">Name Z→A</option>
+           <option value="role-asc">Role A→Z</option>
+           <option value="project-asc">Project A→Z</option>
+         </select>
+       </div>
     </div>
 
     <div id="crew-grid" class="crew-grid"></div>
@@ -21,14 +20,14 @@
 </div>
 
 <style>
-  #crew-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:1.25rem;box-shadow:0 8px 24px rgba(0,0,0,.08)}
-  #crew-view .panel-head{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between;margin-bottom:1rem}
+     #crew-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:2rem;box-shadow:0 8px 24px rgba(0,0,0,.08);min-height:600px;display:flex;flex-direction:column}
+   #crew-view .panel-head{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
   #crew-view .controls{display:flex;gap:.5rem;align-items:center}
   #crew-view input, #crew-view select{
     border:1px solid rgba(0,0,0,.1);border-radius:10px;padding:.5rem .7rem;background:#fff;min-width:220px
   }
-  #crew-view .crew-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-  #crew-view .crew-card{background:rgba(255,255,255,.9);border-radius:14px;padding:1rem;border:1px solid rgba(0,0,0,.06)}
+     #crew-view .crew-grid{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:1rem;flex:1;align-content:start}
+   #crew-view .crew-card{background:rgba(255,255,255,.9);border-radius:14px;padding:1.5rem;border:1px solid rgba(0,0,0,.06);min-height:180px;display:flex;flex-direction:column;justify-content:space-between}
   #crew-view .top{display:flex;gap:.75rem;align-items:center;margin-bottom:.75rem}
   #crew-view .avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#4f46e5;color:#fff;font-weight:700}
   #crew-view .name{font-weight:700}
@@ -36,8 +35,8 @@
   #crew-view .meta2{color:#374151;font-size:.9rem;margin-top:.5rem}
   #crew-view .meter{background:#e5e7eb;height:12px;border-radius:999px;overflow:hidden;position:relative}
   #crew-view .meter span{display:block;height:100%;background:linear-gradient(90deg,#4f46e5,#14B8A6)}
-  #crew-view .badgelist{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem}
-  #crew-view .badge{font-size:.75rem;border:1px solid #e5e7eb;border-radius:999px;padding:.15rem .45rem;background:#f8fafc;color:#334155}
+     #crew-view .badgelist{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.75rem}
+   #crew-view .badge{font-size:.75rem;border:1px solid #e5e7eb;border-radius:999px;padding:.25rem .6rem;background:#f8fafc;color:#334155;font-weight:500}
   #crew-view .btn.ghost{background:transparent;border:1px solid rgba(79,70,229,.4);color:#4f46e5;padding:.5rem .8rem;border-radius:10px;cursor:pointer}
   #crew-view .btn.ghost:hover{background:rgba(79,70,229,.06)}
   #crew-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
@@ -45,12 +44,9 @@
 
 <script>
 (function(){
-  // ---- configuration ----
-  const cfg = (window.OPULENCE || {});
-  const TABLE = cfg.crewTable || "Crew";
-  const BASE = cfg.baseId;
-  const KEY = cfg.airtableApiKey;
-  const PROXY = cfg.proxyUrl; // recommended
+     // ---- configuration ----
+   const cfg = (window.OPULENCE || {});
+   const PROXY_URL = "/api/crew"; // Use the proxy endpoint // recommended
 
   const SLOT = document.getElementById('crew-view');
   const grid = SLOT.querySelector('#crew-grid');
@@ -61,37 +57,25 @@
   // ---- data fetch ----
   async function fetchCrew() {
     try {
-      // Prefer your proxy to avoid exposing keys.
-      if (PROXY) {
-        const r = await fetch(PROXY, { cache: "no-store" });
-        if (!r.ok) throw new Error("Proxy error " + r.status);
-        return (await r.json()).crews || [];
-      }
-
-      // Direct Airtable (FOR DEMO ONLY)
-      if (!BASE || !KEY) throw new Error("Missing Airtable config (use proxyUrl or set baseId + apiKey).");
-
-      const url = new URL(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(TABLE)}`);
-      url.searchParams.set('pageSize', '100');
-      url.searchParams.set('sort[0][field]', 'Name');
-
-      const r = await fetch(url.toString(), {
-        headers: { Authorization: `Bearer ${KEY}` }
+      console.log('Fetching crew data from proxy:', PROXY_URL);
+      
+      const response = await fetch(PROXY_URL, { 
+        cache: "no-store",
+        headers: {
+          'Content-Type': 'application/json'
+        }
       });
-
-      if (!r.ok) throw new Error(`Airtable error ${r.status}`);
-      const json = await r.json();
-
-      // Map Airtable -> normalized shape
-      return (json.records || []).map(rec => ({
-        id: rec.id,
-        name: rec.fields["Name"] || "Unnamed Crew",
-        role: rec.fields["Role/Skill"] || rec.fields["Skill"] || "—",
-        members: Number(rec.fields["Members"] || 0),
-        utilization: clamp(Number(rec.fields["Utilization"] || 0), 0, 100),
-        nextFreeISO: rec.fields["NextFreeISO"] || rec.fields["Next Free"] || null,
-        tags: Array.isArray(rec.fields["Tags"]) ? rec.fields["Tags"] : []
-      }));
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Proxy error:', response.status, errorText);
+        throw new Error(`Proxy error ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Successfully fetched crew data from proxy:', data);
+      
+      return data.crews || [];
     } catch (e) {
       console.warn(e);
 
@@ -116,46 +100,49 @@
 
   // ---- render ----
   function render(crews){
-    // filter
-    const q = (searchEl.value || "").trim().toLowerCase();
-    let rows = !q ? crews : crews.filter(c =>
-      (c.name||"").toLowerCase().includes(q) ||
-      (c.role||"").toLowerCase().includes(q)
-    );
+         // filter
+     const q = (searchEl.value || "").trim().toLowerCase();
+     let rows = !q ? crews : crews.filter(c =>
+       (c.name||"").toLowerCase().includes(q) ||
+       (c.role||"").toLowerCase().includes(q) ||
+       (c.project||"").toLowerCase().includes(q) ||
+       (c.status||"").toLowerCase().includes(q) ||
+       (c.tags||[]).some(tag => tag.toLowerCase().includes(q))
+     );
 
-    // sort
-    const sort = sortEl.value;
-    rows.sort((a,b)=>{
-      if (sort==="util-asc") return (a.utilization-b.utilization);
-      if (sort==="util-desc") return (b.utilization-a.utilization);
-      if (sort==="name-asc") return (a.name.localeCompare(b.name));
-      if (sort==="free-asc") return (new Date(a.nextFreeISO||"9999") - new Date(b.nextFreeISO||"9999"));
-      return 0;
-    });
+         // sort
+     const sort = sortEl.value;
+     rows.sort((a,b)=>{
+       if (sort==="name-asc") return (a.name.localeCompare(b.name));
+       if (sort==="name-desc") return (b.name.localeCompare(a.name));
+       if (sort==="role-asc") return (a.role.localeCompare(b.role));
+       if (sort==="project-asc") return (a.project.localeCompare(b.project));
+       return 0;
+     });
 
-    // paint
-    grid.innerHTML = rows.map(c => {
-      const initials = (c.name.match(/\b\w/g)||[]).slice(0,2).join('').toUpperCase();
-      const util = clamp(c.utilization||0,0,100);
-      const next = fmtNextFree(c.nextFreeISO);
-      return `
-        <div class="crew-card">
-          <div class="top">
-            <div class="avatar">${initials||"?"}</div>
-            <div>
-              <div class="name">${escapeHTML(c.name)}</div>
-              <div class="meta">${escapeHTML(c.role)} • ${c.members||0} member${(c.members||0)===1?'':'s'}</div>
+                   // paint
+      grid.innerHTML = rows.map(c => {
+        const initials = (c.name.match(/\b\w/g)||[]).slice(0,2).join('').toUpperCase();
+               return `
+          <div class="crew-card">
+            <div class="top">
+              <div class="avatar">${initials||"?"}</div>
+              <div>
+                <div class="name">${escapeHTML(c.name)}</div>
+                <div class="meta">${escapeHTML(c.role)} • ${escapeHTML(c.status)}</div>
+              </div>
             </div>
+            <div class="meta2">
+              <div><strong>Project:</strong> ${escapeHTML(c.project)}</div>
+              <div><strong>Contact:</strong> ${escapeHTML(c.contact)}</div>
+            </div>
+            ${Array.isArray(c.tags) && c.tags.length ? `
+              <div class="badgelist">
+                ${c.tags.map(t=>`<span class="badge">${escapeHTML(String(t))}</span>`).join("")}
+              </div>` : ``}
           </div>
-          <div class="meter" title="Utilization: ${util}%"><span style="width:${util}%"></span></div>
-          <div class="meta2">Utilization: <strong>${util}%</strong> • Next free: <strong>${escapeHTML(next)}</strong></div>
-          ${Array.isArray(c.tags) && c.tags.length ? `
-            <div class="badgelist">
-              ${c.tags.map(t=>`<span class="badge">${escapeHTML(String(t))}</span>`).join("")}
-            </div>` : ``}
-        </div>
-      `;
-    }).join("");
+        `;
+     }).join("");
 
     status.style.display = rows.length ? "none" : "block";
     status.textContent = "No crews match your filters.";
