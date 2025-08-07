@@ -1,64 +1,167 @@
-<div class="container">
-  <div class="header">
-    <h1>📅 2-Week Project Schedule</h1>
-    <p>Track active projects and task progress at a glance</p>
-  </div>
+<div id="schedule-view" class="dash dash-schedule">
+  <div class="panel">
+    <div class="panel-head">
+      <h3>📅 2-Week Project Schedule</h3>
+      <p>Track active projects and task progress at a glance</p>
+    </div>
 
-  <div class="dashboard-space">
-    <!-- Added container for the Gantt chart -->
-    <div id="gantt_chart" style="width: 100%; height: 500px;"></div>
+    <div id="schedule-content" class="schedule-content">
+      <div class="loader" style="display:block; margin:2rem auto;"></div>
+    </div>
+
+    <div id="schedule-status" class="status muted" style="display:none"></div>
   </div>
 </div>
 
 <!-- Modal for task details -->
-<div id="taskModal" style="
-  display:none;
-  position:fixed;
-  top:50%; left:50%;
-  transform:translate(-50%, -50%);
-  background:white;
-  padding:20px;
-  border-radius:16px;
-  box-shadow:0 8px 32px rgba(0,0,0,0.3);
-  z-index:1000;
-  width:320px;
-  max-width:90%;
-">
-  <h3 id="modalTitle" style="color:#4f46e5; margin-bottom:10px;"></h3>
-  <p><strong>Crew:</strong> <span id="modalCrew"></span></p>
-  <p><strong>Time:</strong> <span id="modalTime"></span></p>
-  <p><strong>Dependencies:</strong> <span id="modalDeps"></span></p>
-  <button onclick="closeModal()" style="
-    margin-top:15px;
-    padding:8px 14px;
-    border:none;
-    border-radius:8px;
-    background:#4f46e5;
-    color:white;
-    cursor:pointer;
-  ">Close</button>
+<div id="taskModal" class="modal">
+  <div class="modal-content">
+    <h3 id="modalTitle"></h3>
+    <p><strong>Crew:</strong> <span id="modalCrew"></span></p>
+    <p><strong>Time:</strong> <span id="modalTime"></span></p>
+    <p><strong>Dependencies:</strong> <span id="modalDeps"></span></p>
+    <button onclick="closeModal()" class="modal-btn">Close</button>
+  </div>
 </div>
 
 <!-- Overlay -->
-<div id="modalOverlay" style="
-  display:none;
-  position:fixed;
-  top:0; left:0; right:0; bottom:0;
-  background:rgba(0,0,0,0.5);
-  z-index:999;
-" onclick="closeModal()"></div>
+<div id="modalOverlay" class="modal-overlay" onclick="closeModal()"></div>
+
+<style>
+  #schedule-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:1.25rem;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  #schedule-view .panel-head{text-align:center;margin-bottom:1.5rem}
+  #schedule-view .panel-head h3{color:#4f46e5;font-size:1.8rem;margin-bottom:.5rem}
+  #schedule-view .panel-head p{color:#6b7280;font-size:1rem}
+  #schedule-view .schedule-content{min-height:500px}
+  #schedule-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
+  #schedule-view .loader{display:inline-block;width:40px;height:40px;border:4px solid #e5e7eb;border-top-color:#4f46e5;border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin { to { transform: rotate(360deg); } }
+  
+  /* Modal styles */
+  .modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:white;padding:20px;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:1000;width:320px;max-width:90%}
+  .modal-content h3{color:#4f46e5;margin-bottom:10px}
+  .modal-btn{margin-top:15px;padding:8px 14px;border:none;border-radius:8px;background:#4f46e5;color:white;cursor:pointer}
+  .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999}
+</style>
 
 <!-- Load Google Charts -->
 <script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
 <script>
-  google.charts.load('current', {'packages':['gantt']});
-  google.charts.setOnLoadCallback(drawChart);
+(function(){
+  // ---- configuration ----
+  const cfg = (window.OPULENCE || {});
+  const TASKS_TABLE = cfg.tasksTable || "Tasks";
+  const PROJECTS_TABLE = cfg.projectsTable || "Projects";
+  const BASE = cfg.baseId;
+  const KEY = cfg.airtableApiKey;
+  const PROXY = cfg.proxyUrl;
 
-  function daysToMilliseconds(days) {
-    return days * 24 * 60 * 60 * 1000;
+  const SLOT = document.getElementById('schedule-view');
+  const content = SLOT.querySelector('#schedule-content');
+  const status = SLOT.querySelector('#schedule-status');
+
+  // ---- data fetch ----
+  async function fetchScheduleData() {
+    try {
+      // Prefer proxy to avoid exposing keys
+      if (PROXY) {
+        const r = await fetch(PROXY, { cache: "no-store" });
+        if (!r.ok) throw new Error("Proxy error " + r.status);
+        const data = await r.json();
+        return {
+          tasks: data.tasks || [],
+          projects: data.projects || []
+        };
+      }
+
+      // Direct Airtable (FOR DEMO ONLY)
+      if (!BASE || !KEY) throw new Error("Missing Airtable config (use proxyUrl or set baseId + apiKey).");
+
+      const [tasksRes, projectsRes] = await Promise.all([
+        fetch(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(TASKS_TABLE)}?pageSize=100`, {
+          headers: { Authorization: `Bearer ${KEY}` }
+        }),
+        fetch(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(PROJECTS_TABLE)}?pageSize=100`, {
+          headers: { Authorization: `Bearer ${KEY}` }
+        })
+      ]);
+
+      if (!tasksRes.ok || !projectsRes.ok) {
+        throw new Error(`Airtable error: ${tasksRes.status}, ${projectsRes.status}`);
+      }
+
+      const [tasksJson, projectsJson] = await Promise.all([
+        tasksRes.json(),
+        projectsRes.json()
+      ]);
+
+      // Map Airtable -> normalized shape
+      return {
+        tasks: (tasksJson.records || []).map(rec => ({
+          id: rec.id,
+          name: rec.fields["Name"] || rec.fields["Task Name"] || "Untitled Task",
+          project: rec.fields["Project"] || rec.fields["Project Name"] || "—",
+          crew: rec.fields["Crew"] || rec.fields["Assigned Crew"] || "—",
+          startDate: rec.fields["Start Date"] || null,
+          endDate: rec.fields["End Date"] || null,
+          duration: rec.fields["Duration"] || null,
+          percentComplete: clamp(Number(rec.fields["Percent Complete"] || rec.fields["Progress"] || 0), 0, 100),
+          dependencies: rec.fields["Dependencies"] || null,
+          status: rec.fields["Status"] || "In Progress"
+        })),
+        projects: (projectsJson.records || []).map(rec => ({
+          id: rec.id,
+          name: rec.fields["Name"] || rec.fields["Project Name"] || "Unnamed Project"
+        }))
+      };
+    } catch (e) {
+      console.warn(e);
+
+      // Demo-safe fallback
+      return {
+        tasks: [
+          { id:"demo1", name:"Foundation Work", project:"Project 1", crew:"Crew A", startDate:"2025-08-07", endDate:"2025-08-09", duration:3, percentComplete:100, dependencies:null, status:"Completed" },
+          { id:"demo2", name:"Framing", project:"Project 1", crew:"Crew A", startDate:"2025-08-10", endDate:"2025-08-14", duration:5, percentComplete:50, dependencies:"demo1", status:"In Progress" },
+          { id:"demo3", name:"Roofing", project:"Project 1", crew:"Crew A", startDate:"2025-08-15", endDate:"2025-08-17", duration:3, percentComplete:0, dependencies:"demo2", status:"Pending" },
+          { id:"demo4", name:"Demolition", project:"Project 2", crew:"Crew B", startDate:"2025-08-08", endDate:"2025-08-09", duration:2, percentComplete:100, dependencies:null, status:"Completed" },
+          { id:"demo5", name:"Plumbing Install", project:"Project 2", crew:"Crew B", startDate:"2025-08-10", endDate:"2025-08-13", duration:4, percentComplete:70, dependencies:"demo4", status:"In Progress" },
+          { id:"demo6", name:"Electrical Wiring", project:"Project 2", crew:"Crew B", startDate:"2025-08-14", endDate:"2025-08-16", duration:3, percentComplete:20, dependencies:"demo5", status:"In Progress" },
+          { id:"demo7", name:"Site Prep", project:"Project 3", crew:"Crew C", startDate:"2025-08-09", endDate:"2025-08-10", duration:2, percentComplete:100, dependencies:null, status:"Completed" },
+          { id:"demo8", name:"Concrete Pour", project:"Project 3", crew:"Crew C", startDate:"2025-08-11", endDate:"2025-08-12", duration:2, percentComplete:50, dependencies:"demo7", status:"In Progress" },
+          { id:"demo9", name:"Masonry", project:"Project 3", crew:"Crew C", startDate:"2025-08-13", endDate:"2025-08-15", duration:3, percentComplete:0, dependencies:"demo8", status:"Pending" }
+        ],
+        projects: [
+          { id:"demo1", name:"Project 1" },
+          { id:"demo2", name:"Project 2" },
+          { id:"demo3", name:"Project 3" }
+        ]
+      };
+    }
   }
 
-  function drawChart() {
+  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+  function daysToMilliseconds(days) { return days * 24 * 60 * 60 * 1000; }
+
+  // ---- render ----
+  function render(data) {
+    const { tasks, projects } = data;
+    
+    // Create Gantt chart data
+    const chartData = createGanttData(tasks);
+    
+    content.innerHTML = '<div id="gantt_chart" style="width: 100%; height: 500px;"></div>';
+    
+    // Load and draw Google Charts
+    if (typeof google !== 'undefined' && google.charts) {
+      drawChart(chartData);
+    } else {
+      // Load Google Charts if not already loaded
+      google.charts.load('current', {'packages':['gantt']});
+      google.charts.setOnLoadCallback(() => drawChart(chartData));
+    }
+  }
+
+  function createGanttData(tasks) {
     const data = new google.visualization.DataTable();
     data.addColumn('string', 'Task ID');
     data.addColumn('string', 'Task Name');
@@ -69,24 +172,28 @@
     data.addColumn('number', 'Percent Complete');
     data.addColumn('string', 'Dependencies');
 
-    // Example tasks
-    data.addRows([
-      // Project 1
-      ['P1_T1', 'Foundation Work', 'Project 1', new Date(2025,7,7), new Date(2025,7,9), null, 100, null],
-      ['P1_T2', 'Framing', 'Project 1', new Date(2025,7,10), new Date(2025,7,14), null, 50, 'P1_T1'],
-      ['P1_T3', 'Roofing', 'Project 1', new Date(2025,7,15), new Date(2025,7,17), null, 0, 'P1_T2'],
+    // Convert tasks to Gantt format
+    const rows = tasks.map(task => {
+      const startDate = task.startDate ? new Date(task.startDate) : new Date();
+      const endDate = task.endDate ? new Date(task.endDate) : new Date(startDate.getTime() + daysToMilliseconds(task.duration || 1));
+      
+      return [
+        task.id,
+        task.name,
+        task.project,
+        startDate,
+        endDate,
+        null, // Duration calculated automatically
+        task.percentComplete,
+        task.dependencies
+      ];
+    });
 
-      // Project 2
-      ['P2_T1', 'Demolition', 'Project 2', new Date(2025,7,8), new Date(2025,7,9), null, 100, null],
-      ['P2_T2', 'Plumbing Install', 'Project 2', new Date(2025,7,10), new Date(2025,7,13), null, 70, 'P2_T1'],
-      ['P2_T3', 'Electrical Wiring', 'Project 2', new Date(2025,7,14), new Date(2025,7,16), null, 20, 'P2_T2'],
+    data.addRows(rows);
+    return data;
+  }
 
-      // Project 3
-      ['P3_T1', 'Site Prep', 'Project 3', new Date(2025,7,9), new Date(2025,7,10), null, 100, null],
-      ['P3_T2', 'Concrete Pour', 'Project 3', new Date(2025,7,11), new Date(2025,7,12), null, 50, 'P3_T1'],
-      ['P3_T3', 'Masonry', 'Project 3', new Date(2025,7,13), new Date(2025,7,15), null, 0, 'P3_T2']
-    ]);
-
+  function drawChart(data) {
     const options = {
       height: 500,
       gantt: {
@@ -108,13 +215,13 @@
       if (selection.length) {
         const row = selection[0].row;
         const taskName = data.getValue(row, 1);
-        const crew = data.getValue(row, 2);
+        const project = data.getValue(row, 2);
         const startDate = data.getValue(row, 3);
         const endDate = data.getValue(row, 4);
         const deps = data.getValue(row, 7) || 'None';
 
         document.getElementById('modalTitle').innerText = taskName;
-        document.getElementById('modalCrew').innerText = crew;
+        document.getElementById('modalCrew').innerText = project;
         document.getElementById('modalTime').innerText = `${startDate.toDateString()} - ${endDate.toDateString()}`;
         document.getElementById('modalDeps').innerText = deps;
 
@@ -124,8 +231,27 @@
     });
   }
 
-  function closeModal() {
+  // ---- modal functions ----
+  window.closeModal = function() {
     document.getElementById('taskModal').style.display = 'none';
     document.getElementById('modalOverlay').style.display = 'none';
+  };
+
+  // ---- boot ----
+  async function boot(){
+    status.style.display = "block";
+    status.textContent = "Loading schedule data…";
+    const data = await fetchScheduleData();
+    render(data);
+    status.style.display = "none";
   }
+
+  // This fragment runs when injected IF the host calls window.afterDashboardLoad('schedule')
+  window.afterDashboardLoad = (name) => {
+    if (name === 'schedule') boot();
+  };
+
+  // If user loaded schedule.html as the default view, still initialize:
+  if (SLOT && !window._scheduleBooted) { window._scheduleBooted = true; boot(); }
+})();
 </script>
