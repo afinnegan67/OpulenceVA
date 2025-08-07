@@ -1,0 +1,131 @@
+<div class="container">
+  <div class="header">
+    <h1>📅 2-Week Project Schedule</h1>
+    <p>Track active projects and task progress at a glance</p>
+  </div>
+
+  <div class="dashboard-space">
+    <!-- Added container for the Gantt chart -->
+    <div id="gantt_chart" style="width: 100%; height: 500px;"></div>
+  </div>
+</div>
+
+<!-- Modal for task details -->
+<div id="taskModal" style="
+  display:none;
+  position:fixed;
+  top:50%; left:50%;
+  transform:translate(-50%, -50%);
+  background:white;
+  padding:20px;
+  border-radius:16px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.3);
+  z-index:1000;
+  width:320px;
+  max-width:90%;
+">
+  <h3 id="modalTitle" style="color:#4f46e5; margin-bottom:10px;"></h3>
+  <p><strong>Crew:</strong> <span id="modalCrew"></span></p>
+  <p><strong>Time:</strong> <span id="modalTime"></span></p>
+  <p><strong>Dependencies:</strong> <span id="modalDeps"></span></p>
+  <button onclick="closeModal()" style="
+    margin-top:15px;
+    padding:8px 14px;
+    border:none;
+    border-radius:8px;
+    background:#4f46e5;
+    color:white;
+    cursor:pointer;
+  ">Close</button>
+</div>
+
+<!-- Overlay -->
+<div id="modalOverlay" style="
+  display:none;
+  position:fixed;
+  top:0; left:0; right:0; bottom:0;
+  background:rgba(0,0,0,0.5);
+  z-index:999;
+" onclick="closeModal()"></div>
+
+<!-- Load Google Charts -->
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script>
+  google.charts.load('current', {'packages':['gantt']});
+  google.charts.setOnLoadCallback(drawChart);
+
+  function daysToMilliseconds(days) {
+    return days * 24 * 60 * 60 * 1000;
+  }
+
+  function drawChart() {
+    const data = new google.visualization.DataTable();
+    data.addColumn('string', 'Task ID');
+    data.addColumn('string', 'Task Name');
+    data.addColumn('string', 'Resource');
+    data.addColumn('date', 'Start Date');
+    data.addColumn('date', 'End Date');
+    data.addColumn('number', 'Duration');
+    data.addColumn('number', 'Percent Complete');
+    data.addColumn('string', 'Dependencies');
+
+    // Example tasks
+    data.addRows([
+      // Project 1
+      ['P1_T1', 'Foundation Work', 'Project 1', new Date(2025,7,7), new Date(2025,7,9), null, 100, null],
+      ['P1_T2', 'Framing', 'Project 1', new Date(2025,7,10), new Date(2025,7,14), null, 50, 'P1_T1'],
+      ['P1_T3', 'Roofing', 'Project 1', new Date(2025,7,15), new Date(2025,7,17), null, 0, 'P1_T2'],
+
+      // Project 2
+      ['P2_T1', 'Demolition', 'Project 2', new Date(2025,7,8), new Date(2025,7,9), null, 100, null],
+      ['P2_T2', 'Plumbing Install', 'Project 2', new Date(2025,7,10), new Date(2025,7,13), null, 70, 'P2_T1'],
+      ['P2_T3', 'Electrical Wiring', 'Project 2', new Date(2025,7,14), new Date(2025,7,16), null, 20, 'P2_T2'],
+
+      // Project 3
+      ['P3_T1', 'Site Prep', 'Project 3', new Date(2025,7,9), new Date(2025,7,10), null, 100, null],
+      ['P3_T2', 'Concrete Pour', 'Project 3', new Date(2025,7,11), new Date(2025,7,12), null, 50, 'P3_T1'],
+      ['P3_T3', 'Masonry', 'Project 3', new Date(2025,7,13), new Date(2025,7,15), null, 0, 'P3_T2']
+    ]);
+
+    const options = {
+      height: 500,
+      gantt: {
+        trackHeight: 40,
+        palette: [
+          {color: '#6366f1', dark: '#4f46e5', light: '#eef2ff'}, // Project 1
+          {color: '#f43f5e', dark: '#e11d48', light: '#ffe4e6'}, // Project 2
+          {color: '#f59e0b', dark: '#d97706', light: '#fffbeb'}  // Project 3
+        ]
+      }
+    };
+
+    const chart = new google.visualization.Gantt(document.getElementById('gantt_chart'));
+    chart.draw(data, options);
+
+    // Click listener for details
+    google.visualization.events.addListener(chart, 'select', function() {
+      const selection = chart.getSelection();
+      if (selection.length) {
+        const row = selection[0].row;
+        const taskName = data.getValue(row, 1);
+        const crew = data.getValue(row, 2);
+        const startDate = data.getValue(row, 3);
+        const endDate = data.getValue(row, 4);
+        const deps = data.getValue(row, 7) || 'None';
+
+        document.getElementById('modalTitle').innerText = taskName;
+        document.getElementById('modalCrew').innerText = crew;
+        document.getElementById('modalTime').innerText = `${startDate.toDateString()} - ${endDate.toDateString()}`;
+        document.getElementById('modalDeps').innerText = deps;
+
+        document.getElementById('taskModal').style.display = 'block';
+        document.getElementById('modalOverlay').style.display = 'block';
+      }
+    });
+  }
+
+  function closeModal() {
+    document.getElementById('taskModal').style.display = 'none';
+    document.getElementById('modalOverlay').style.display = 'none';
+  }
+</script>

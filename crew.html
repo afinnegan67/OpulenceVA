@@ -1,0 +1,189 @@
+<div id="crew-view" class="dash dash-crew">
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Crew Utilization & Availability</h3>
+      <div class="controls">
+        <input id="crew-search" placeholder="Search crew or skill…" />
+        <select id="crew-sort">
+          <option value="util-desc">Utilization ↓</option>
+          <option value="util-asc">Utilization ↑</option>
+          <option value="free-asc">Next Free (earliest)</option>
+          <option value="name-asc">Name A→Z</option>
+        </select>
+        <button class="btn ghost" onclick="loadDashboard('schedule')">Back to Schedule</button>
+      </div>
+    </div>
+
+    <div id="crew-grid" class="crew-grid"></div>
+
+    <div id="crew-status" class="status muted" style="display:none"></div>
+  </div>
+</div>
+
+<style>
+  #crew-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:1.25rem;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  #crew-view .panel-head{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between;margin-bottom:1rem}
+  #crew-view .controls{display:flex;gap:.5rem;align-items:center}
+  #crew-view input, #crew-view select{
+    border:1px solid rgba(0,0,0,.1);border-radius:10px;padding:.5rem .7rem;background:#fff;min-width:220px
+  }
+  #crew-view .crew-grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
+  #crew-view .crew-card{background:rgba(255,255,255,.9);border-radius:14px;padding:1rem;border:1px solid rgba(0,0,0,.06)}
+  #crew-view .top{display:flex;gap:.75rem;align-items:center;margin-bottom:.75rem}
+  #crew-view .avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#4f46e5;color:#fff;font-weight:700}
+  #crew-view .name{font-weight:700}
+  #crew-view .meta{color:#6b7280;font-size:.9rem}
+  #crew-view .meta2{color:#374151;font-size:.9rem;margin-top:.5rem}
+  #crew-view .meter{background:#e5e7eb;height:12px;border-radius:999px;overflow:hidden;position:relative}
+  #crew-view .meter span{display:block;height:100%;background:linear-gradient(90deg,#4f46e5,#14B8A6)}
+  #crew-view .badgelist{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.5rem}
+  #crew-view .badge{font-size:.75rem;border:1px solid #e5e7eb;border-radius:999px;padding:.15rem .45rem;background:#f8fafc;color:#334155}
+  #crew-view .btn.ghost{background:transparent;border:1px solid rgba(79,70,229,.4);color:#4f46e5;padding:.5rem .8rem;border-radius:10px;cursor:pointer}
+  #crew-view .btn.ghost:hover{background:rgba(79,70,229,.06)}
+  #crew-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
+</style>
+
+<script>
+(function(){
+  // ---- configuration ----
+  const cfg = (window.OPULENCE || {});
+  const TABLE = cfg.crewTable || "Crew";
+  const BASE = cfg.baseId;
+  const KEY = cfg.airtableApiKey;
+  const PROXY = cfg.proxyUrl; // recommended
+
+  const SLOT = document.getElementById('crew-view');
+  const grid = SLOT.querySelector('#crew-grid');
+  const status = SLOT.querySelector('#crew-status');
+  const searchEl = SLOT.querySelector('#crew-search');
+  const sortEl = SLOT.querySelector('#crew-sort');
+
+  // ---- data fetch ----
+  async function fetchCrew() {
+    try {
+      // Prefer your proxy to avoid exposing keys.
+      if (PROXY) {
+        const r = await fetch(PROXY, { cache: "no-store" });
+        if (!r.ok) throw new Error("Proxy error " + r.status);
+        return (await r.json()).crews || [];
+      }
+
+      // Direct Airtable (FOR DEMO ONLY)
+      if (!BASE || !KEY) throw new Error("Missing Airtable config (use proxyUrl or set baseId + apiKey).");
+
+      const url = new URL(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(TABLE)}`);
+      url.searchParams.set('pageSize', '100');
+      url.searchParams.set('sort[0][field]', 'Name');
+
+      const r = await fetch(url.toString(), {
+        headers: { Authorization: `Bearer ${KEY}` }
+      });
+
+      if (!r.ok) throw new Error(`Airtable error ${r.status}`);
+      const json = await r.json();
+
+      // Map Airtable -> normalized shape
+      return (json.records || []).map(rec => ({
+        id: rec.id,
+        name: rec.fields["Name"] || "Unnamed Crew",
+        role: rec.fields["Role/Skill"] || rec.fields["Skill"] || "—",
+        members: Number(rec.fields["Members"] || 0),
+        utilization: clamp(Number(rec.fields["Utilization"] || 0), 0, 100),
+        nextFreeISO: rec.fields["NextFreeISO"] || rec.fields["Next Free"] || null,
+        tags: Array.isArray(rec.fields["Tags"]) ? rec.fields["Tags"] : []
+      }));
+    } catch (e) {
+      console.warn(e);
+
+      // Demo-safe fallback so your UI still shows during Loom
+      return [
+        { id:"demo1", name:"Crew A", role:"Framing", members:4, utilization:85, nextFreeISO:addHours(50), tags:["Lead+Apprentice","Truck #2"] },
+        { id:"demo2", name:"Crew B", role:"Electrical", members:3, utilization:70, nextFreeISO:addHours(18), tags:["Licensed","PPE"] },
+        { id:"demo3", name:"Crew C", role:"Finish", members:5, utilization:92, nextFreeISO:addHours(72), tags:["Punch List"] },
+        { id:"demo4", name:"Crew D", role:"Plumbing", members:2, utilization:40, nextFreeISO:addHours(6), tags:["Emergency"] },
+      ];
+    }
+  }
+
+  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+  function addHours(h){ return new Date(Date.now()+h*3600e3).toISOString(); }
+  function fmtNextFree(iso){
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d)) return "—";
+    return d.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+  }
+
+  // ---- render ----
+  function render(crews){
+    // filter
+    const q = (searchEl.value || "").trim().toLowerCase();
+    let rows = !q ? crews : crews.filter(c =>
+      (c.name||"").toLowerCase().includes(q) ||
+      (c.role||"").toLowerCase().includes(q)
+    );
+
+    // sort
+    const sort = sortEl.value;
+    rows.sort((a,b)=>{
+      if (sort==="util-asc") return (a.utilization-b.utilization);
+      if (sort==="util-desc") return (b.utilization-a.utilization);
+      if (sort==="name-asc") return (a.name.localeCompare(b.name));
+      if (sort==="free-asc") return (new Date(a.nextFreeISO||"9999") - new Date(b.nextFreeISO||"9999"));
+      return 0;
+    });
+
+    // paint
+    grid.innerHTML = rows.map(c => {
+      const initials = (c.name.match(/\b\w/g)||[]).slice(0,2).join('').toUpperCase();
+      const util = clamp(c.utilization||0,0,100);
+      const next = fmtNextFree(c.nextFreeISO);
+      return `
+        <div class="crew-card">
+          <div class="top">
+            <div class="avatar">${initials||"?"}</div>
+            <div>
+              <div class="name">${escapeHTML(c.name)}</div>
+              <div class="meta">${escapeHTML(c.role)} • ${c.members||0} member${(c.members||0)===1?'':'s'}</div>
+            </div>
+          </div>
+          <div class="meter" title="Utilization: ${util}%"><span style="width:${util}%"></span></div>
+          <div class="meta2">Utilization: <strong>${util}%</strong> • Next free: <strong>${escapeHTML(next)}</strong></div>
+          ${Array.isArray(c.tags) && c.tags.length ? `
+            <div class="badgelist">
+              ${c.tags.map(t=>`<span class="badge">${escapeHTML(String(t))}</span>`).join("")}
+            </div>` : ``}
+        </div>
+      `;
+    }).join("");
+
+    status.style.display = rows.length ? "none" : "block";
+    status.textContent = "No crews match your filters.";
+  }
+
+  function escapeHTML(s){
+    return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  }
+
+  // ---- boot ----
+  let CREWS = [];
+  async function boot(){
+    status.style.display = "block";
+    status.textContent = "Loading crew…";
+    CREWS = await fetchCrew();
+    status.style.display = "none";
+    render(CREWS);
+  }
+
+  searchEl.addEventListener('input', ()=>render(CREWS));
+  sortEl.addEventListener('change', ()=>render(CREWS));
+
+  // This fragment runs when injected IF the host calls window.afterDashboardLoad('crew')
+  window.afterDashboardLoad = (name) => {
+    if (name === 'crew') boot();
+  };
+
+  // If user loaded crew.html as the default view, still initialize:
+  if (SLOT && !window._crewBooted) { window._crewBooted = true; boot(); }
+})();
+</script>
