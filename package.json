@@ -1,0 +1,20 @@
+{
+  "name": "opulenceva-dashboard",
+  "version": "1.0.0",
+  "description": "Construction project management dashboard with Airtable integration",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1"
+  },
+  "keywords": ["dashboard", "airtable", "construction", "project-management"],
+  "author": "",
+  "license": "MIT"
+}

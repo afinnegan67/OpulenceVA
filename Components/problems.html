@@ -1,0 +1,356 @@
+<div id="problems-view" class="dash dash-problems">
+  <div class="panel">
+    <div class="panel-head">
+      <h3>🚨 Active Problems</h3>
+      <p>Track and resolve issues across all projects</p>
+    </div>
+
+    <!-- Summary Bar -->
+    <div id="summary-bar" class="summary-bar">
+      <div class="loader" style="display:block; margin:2rem auto;"></div>
+    </div>
+
+         <!-- Filters -->
+     <div class="filters">
+              <select id="statusFilter" class="filter-select">
+         <option value="">All Statuses</option>
+         <option value="Open">Open</option>
+         <option value="In Progress">In Progress</option>
+         <option value="Resolved">Resolved</option>
+       </select>
+       <select id="projectFilter" class="filter-select">
+         <option value="">All Projects</option>
+       </select>
+               <button id="refreshBtn" class="refresh-btn">🔄 Refresh</button>
+        <button id="testConnectionBtn" class="test-btn">🔍 Test Connection</button>
+     </div>
+
+    <!-- Problem Table -->
+    <div id="problems-table" class="problems-table">
+      <div class="loader" style="display:block; margin:2rem auto;"></div>
+    </div>
+
+    <div id="problems-status" class="status muted" style="display:none"></div>
+  </div>
+</div>
+
+<!-- Modal -->
+<div id="problemModal" class="modal">
+  <div class="modal-content">
+    <h3 id="problemTitle"></h3>
+    <p><strong>Status:</strong> <span id="problemStatus"></span></p>
+    <p><strong>Crew:</strong> <span id="problemCrew"></span></p>
+    <p><strong>Details:</strong> <span id="problemDetails"></span></p>
+    <button onclick="closeProblemModal()" class="modal-btn">Close</button>
+  </div>
+</div>
+
+<!-- Overlay -->
+<div id="problemOverlay" class="modal-overlay" onclick="closeProblemModal()"></div>
+
+<style>
+  #problems-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:1.25rem;box-shadow:0 8px 24px rgba(0,0,0,.08)}
+  #problems-view .panel-head{text-align:center;margin-bottom:1.5rem}
+  #problems-view .panel-head h3{color:#4f46e5;font-size:1.8rem;margin-bottom:.5rem}
+  #problems-view .panel-head p{color:#6b7280;font-size:1rem}
+  #problems-view .summary-bar{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;margin-bottom:1rem}
+  #problems-view .summary-card{flex:1;min-width:150px;background:white;padding:1rem;border-radius:12px;text-align:center;box-shadow:0 4px 12px rgba(0,0,0,0.05)}
+  #problems-view .summary-card h2{font-size:1.8rem;margin-bottom:.5rem}
+  #problems-view .summary-card p{color:#6b7280;font-size:.9rem}
+  #problems-view .filters{margin-bottom:1rem;text-align:center}
+     #problems-view .filter-select{padding:0.5rem;border-radius:8px;border:1px solid #ddd;margin-left:0.5rem}
+   #problems-view .refresh-btn{background:#4f46e5;color:white;border:none;padding:0.5rem 1rem;border-radius:8px;cursor:pointer;margin-left:0.5rem}
+   #problems-view .refresh-btn:hover{background:#4338ca}
+   #problems-view .test-btn{background:#059669;color:white;border:none;padding:0.5rem 1rem;border-radius:8px;cursor:pointer;margin-left:0.5rem}
+   #problems-view .test-btn:hover{background:#047857}
+  #problems-view .problems-table{overflow-x:auto}
+  #problems-view .problems-table table{width:100%;border-collapse:collapse}
+  #problems-view .problems-table th{background:#eef2ff;color:#4f46e5;padding:0.75rem;text-align:left;font-weight:600}
+  #problems-view .problems-table td{padding:0.75rem;border-bottom:1px solid #f3f4f6}
+     #problems-view .status-badge{color:white;padding:0.25rem 0.5rem;border-radius:6px;font-size:.8rem}
+   #problems-view .status-critical{background:#e11d48}
+   #problems-view .status-high{background:#f59e0b}
+   #problems-view .status-medium{background:#3b82f6}
+   #problems-view .status-low{background:#6b7280}
+   #problems-view .severity-badge{color:white;padding:0.25rem 0.5rem;border-radius:6px;font-size:.8rem}
+   #problems-view .severity-high{background:#dc2626}
+   #problems-view .severity-medium{background:#f59e0b}
+   #problems-view .severity-low{background:#10b981}
+  #problems-view .view-btn{background:#4f46e5;color:white;border:none;padding:0.4rem 0.8rem;border-radius:6px;cursor:pointer}
+  #problems-view .view-btn:hover{background:#4338ca}
+  #problems-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
+  #problems-view .loader{display:inline-block;width:40px;height:40px;border:4px solid #e5e7eb;border-top-color:#4f46e5;border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin { to { transform: rotate(360deg); } }
+  
+  /* Modal styles */
+  .modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:white;padding:20px;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:1000;width:350px;max-width:90%}
+  .modal-content h3{color:#4f46e5;margin-bottom:10px}
+  .modal-btn{margin-top:15px;padding:8px 14px;border:none;border-radius:8px;background:#4f46e5;color:white;cursor:pointer}
+  .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999}
+</style>
+
+<script>
+(function(){
+  // ---- configuration ----
+  const cfg = (window.OPULENCE || {});
+
+  // DOM refs (needed for status and rendering)
+  const SLOT = document.getElementById('problems-view');
+  const summaryBar = SLOT.querySelector('#summary-bar');
+  const problemsTable = SLOT.querySelector('#problems-table');
+  const status = SLOT.querySelector('#problems-status');
+  const statusFilter = SLOT.querySelector('#statusFilter');
+  const projectFilter = SLOT.querySelector('#projectFilter');
+  const refreshBtn = SLOT.querySelector('#refreshBtn');
+  const testConnectionBtn = SLOT.querySelector('#testConnectionBtn');
+
+  // Build proxy URL including optional baseId and table identifiers
+  function buildProblemsProxyUrl() {
+    const baseProxy = (cfg.proxyUrl && cfg.proxyUrl.trim()) || '/api/problems';
+    const u = new URL(baseProxy, window.location.origin);
+    if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
+    if (cfg.problemsTableId) u.searchParams.set('problemsTableId', cfg.problemsTableId);
+    else if (cfg.problemsTable) u.searchParams.set('problemsTableName', cfg.problemsTable);
+    if (cfg.projectsTableId) u.searchParams.set('projectsTableId', cfg.projectsTableId);
+    else if (cfg.projectsTable) u.searchParams.set('projectsTableName', cfg.projectsTable);
+    return u.toString();
+  }
+
+  // ---- data fetch ----
+  async function fetchProblemsData() {
+    try {
+      const url = buildProblemsProxyUrl();
+      console.log('Fetching data from:', url);
+      const response = await fetch(url, { cache: "no-store", headers: { 'Content-Type': 'application/json' } });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Proxy error ${response.status}: ${errorText}`);
+      }
+      const data = await response.json();
+      return { issues: data.issues || [], projects: data.projects || [] };
+    } catch (e) {
+      console.error('Airtable fetch error:', e.message);
+      status.style.display = "block";
+      status.textContent = `Error loading data: ${e.message}`;
+      status.style.color = "#e11d48";
+      // Demo-safe fallback
+      return {
+         issues: [
+           { id:"demo1", problemId:"P-001", type:"Scheduling Hole", description:"Drywall finished early, gap in schedule", project:"Kitchen Remodel", reportedDate:"2025-08-07", status:"Open", severity:"Medium", assignedTo:"Dan The Man" },
+           { id:"demo2", problemId:"P-002", type:"Material Delay", description:"Cement delivery pushed back", project:"Patio Extension", reportedDate:"2025-08-05", status:"In Progress", severity:"High", assignedTo:"Bob Builder" },
+           { id:"demo3", problemId:"P-003", type:"Weather", description:"Heavy rain delaying concrete pour", project:"Backyard Remodel", reportedDate:"2025-08-06", status:"Open", severity:"High", assignedTo:"Crew B" },
+           { id:"demo4", problemId:"P-004", type:"Client Issue", description:"Tile color not approved, waiting for decision", project:"Bathroom Upgrade", reportedDate:"2025-08-04", status:"Resolved", severity:"Medium", assignedTo:"Sarah Smith" }
+         ],
+        projects: [
+          { id:"demo1", name:"Project 1" },
+          { id:"demo2", name:"Project 2" },
+          { id:"demo3", name:"Project 3" }
+        ]
+      };
+    }
+  }
+
+  function formatDate(dateStr) {
+    if (!dateStr) return "—";
+    const d = new Date(dateStr);
+    if (isNaN(d)) return "—";
+    return d.toLocaleDateString([], { month:"short", day:"numeric", year:"numeric" });
+  }
+
+     function getStatusClass(status) {
+     switch(status.toLowerCase()) {
+       case "open": return "status-critical";
+       case "in progress": return "status-high";
+       case "resolved": return "status-medium";
+       default: return "status-low";
+     }
+   }
+
+   function getSeverityClass(severity) {
+     switch(severity.toLowerCase()) {
+       case "high": return "severity-high";
+       case "medium": return "severity-medium";
+       case "low": return "severity-low";
+       default: return "severity-medium";
+     }
+   }
+
+  // ---- render ----
+  function render(data) {
+    const { issues, projects } = data;
+    
+         // Calculate summary stats
+     const openIssues = issues.filter(i => i.status === "Open").length;
+     const highSeverityIssues = issues.filter(i => i.severity === "High" && i.status !== "Resolved").length;
+     const resolvedIssues = issues.filter(i => i.status === "Resolved").length;
+
+         // Render summary bar
+     summaryBar.innerHTML = `
+       <div class="summary-card">
+         <h2 style="color:#4f46e5;">${openIssues}</h2>
+         <p>Open Issues</p>
+       </div>
+       <div class="summary-card">
+         <h2 style="color:#e11d48;">${highSeverityIssues}</h2>
+         <p>High Severity</p>
+       </div>
+       <div class="summary-card">
+         <h2 style="color:#059669;">${resolvedIssues}</h2>
+         <p>Resolved</p>
+       </div>
+     `;
+
+    // Populate project filter
+    const uniqueProjects = [...new Set(issues.map(i => i.project).filter(p => p !== "—"))];
+    projectFilter.innerHTML = '<option value="">All Projects</option>' + 
+      uniqueProjects.map(p => `<option value="${escapeHTML(p)}">${escapeHTML(p)}</option>`).join("");
+
+    // Render problems table
+    renderProblemsTable(issues);
+  }
+
+  function renderProblemsTable(issues) {
+    const filteredIssues = filterIssues(issues);
+    
+         problemsTable.innerHTML = `
+       <table>
+         <thead>
+           <tr>
+             <th>Problem ID</th>
+             <th>Type</th>
+             <th>Description</th>
+             <th>Project</th>
+             <th>Status</th>
+             <th>Severity</th>
+             <th>Assigned To</th>
+             <th>Reported</th>
+             <th>Action</th>
+           </tr>
+         </thead>
+         <tbody>
+           ${filteredIssues.map(issue => `
+             <tr>
+               <td>${escapeHTML(issue.problemId)}</td>
+               <td>${escapeHTML(issue.type)}</td>
+               <td>${escapeHTML(issue.description)}</td>
+               <td>${escapeHTML(issue.project)}</td>
+               <td><span class="status-badge ${getStatusClass(issue.status)}">${escapeHTML(issue.status)}</span></td>
+               <td><span class="severity-badge ${getSeverityClass(issue.severity)}">${escapeHTML(issue.severity)}</span></td>
+               <td>${escapeHTML(issue.assignedTo)}</td>
+               <td>${formatDate(issue.reportedDate)}</td>
+               <td><button onclick="openProblemModal('${escapeHTML(issue.problemId)}','${escapeHTML(issue.type)}','${escapeHTML(issue.description)}','${escapeHTML(issue.project)}','${escapeHTML(issue.status)}','${escapeHTML(issue.severity)}','${escapeHTML(issue.assignedTo)}')" class="view-btn">View</button></td>
+             </tr>
+           `).join("")}
+         </tbody>
+       </table>
+     `;
+
+    status.style.display = filteredIssues.length ? "none" : "block";
+    status.textContent = "No issues match your filters.";
+  }
+
+     function filterIssues(issues) {
+     const statusFilterValue = statusFilter.value;
+     const projectFilterValue = projectFilter.value;
+     
+     return issues.filter(issue => {
+       const statusMatch = !statusFilterValue || issue.status === statusFilterValue;
+       const projectMatch = !projectFilterValue || issue.project === projectFilterValue;
+       return statusMatch && projectMatch;
+     });
+   }
+
+     function escapeHTML(s){
+     return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+   }
+
+  // Test proxy connection
+  async function testAirtableConnection() {
+    try {
+      const url = buildProblemsProxyUrl();
+      const response = await fetch(url, { headers: { 'Content-Type': 'application/json' } });
+       
+       if (response.ok) {
+         const data = await response.json();
+         console.log('✅ Proxy connection successful!');
+         console.log('Issues found:', data.issues?.length || 0);
+         console.log('Projects found:', data.projects?.length || 0);
+         status.style.display = "block";
+         status.textContent = `✅ Proxy connection successful! Found ${data.issues?.length || 0} issues and ${data.projects?.length || 0} projects.`;
+         status.style.color = "#059669";
+       } else {
+         const errorText = await response.text();
+         console.error('❌ Proxy connection failed:', response.status, errorText);
+         status.style.display = "block";
+         status.textContent = `❌ Proxy connection failed: ${response.status} ${errorText}`;
+         status.style.color = "#e11d48";
+       }
+     } catch (error) {
+       console.error('❌ Proxy connection error:', error);
+       status.style.display = "block";
+       status.textContent = `❌ Proxy connection error: ${error.message}`;
+       status.style.color = "#e11d48";
+     }
+   }
+
+     // ---- modal functions ----
+   window.openProblemModal = function(problemId, type, description, project, status, severity, assignedTo) {
+     document.getElementById('problemTitle').innerText = `Problem ${problemId}`;
+     document.getElementById('problemStatus').innerText = status;
+     document.getElementById('problemCrew').innerText = assignedTo;
+     document.getElementById('problemDetails').innerText = `${type}: ${description} (Project: ${project}, Severity: ${severity})`;
+     document.getElementById('problemModal').style.display = 'block';
+     document.getElementById('problemOverlay').style.display = 'block';
+   };
+
+  window.closeProblemModal = function() {
+    document.getElementById('problemModal').style.display = 'none';
+    document.getElementById('problemOverlay').style.display = 'none';
+  };
+
+  // ---- boot ----
+  let ISSUES_DATA = [];
+  async function boot(){
+    status.style.display = "block";
+    status.textContent = "Loading problems data…";
+    const data = await fetchProblemsData();
+    ISSUES_DATA = data.issues;
+    render(data);
+  }
+
+  // Events
+  statusFilter.addEventListener('change', () => renderProblemsTable(ISSUES_DATA));
+  projectFilter.addEventListener('change', () => renderProblemsTable(ISSUES_DATA));
+  refreshBtn.addEventListener('click', () => boot());
+  testConnectionBtn.addEventListener('click', () => testAirtableConnection());
+
+  // Boot triggers
+  window.afterDashboardLoad = (name) => { if (name === 'problems') boot(); };
+  if (SLOT && !window._problemsBooted) { window._problemsBooted = true; boot(); }
+})();
+</script>
+    status.textContent = "Loading problems data…";
+    const data = await fetchProblemsData();
+    ISSUES_DATA = data.issues;
+    render(data);
+  }
+
+  // Events
+  statusFilter.addEventListener('change', () => renderProblemsTable(ISSUES_DATA));
+  projectFilter.addEventListener('change', () => renderProblemsTable(ISSUES_DATA));
+  refreshBtn.addEventListener('click', () => boot());
+  testConnectionBtn.addEventListener('click', () => testAirtableConnection());
+
+  // Boot triggers
+  window.afterDashboardLoad = (name) => { if (name === 'problems') boot(); };
+  if (SLOT && !window._problemsBooted) { window._problemsBooted = true; boot(); }
+})();
+</script>
+})();
+</script>
+  };
+
+  // If user loaded problems.html as the default view, still initialize:
+  if (SLOT && !window._problemsBooted) { window._problemsBooted = true; boot(); }
+})();
+</script>

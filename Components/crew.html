@@ -1,0 +1,176 @@
+<div id="crew-view" class="dash dash-crew">
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Crew Utilization & Availability</h3>
+             <div class="controls">
+                  <input id="crew-search" placeholder="Search crew, role, project, skills…" />
+         <select id="crew-sort">
+           <option value="name-asc">Name A→Z</option>
+           <option value="name-desc">Name Z→A</option>
+           <option value="role-asc">Role A→Z</option>
+           <option value="project-asc">Project A→Z</option>
+         </select>
+       </div>
+    </div>
+
+    <div id="crew-grid" class="crew-grid"></div>
+
+    <div id="crew-status" class="status muted" style="display:none"></div>
+  </div>
+</div>
+
+<style>
+     #crew-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:2rem;box-shadow:0 8px 24px rgba(0,0,0,.08);min-height:600px;display:flex;flex-direction:column}
+   #crew-view .panel-head{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
+  #crew-view .controls{display:flex;gap:.5rem;align-items:center}
+  #crew-view input, #crew-view select{
+    border:1px solid rgba(0,0,0,.1);border-radius:10px;padding:.5rem .7rem;background:#fff;min-width:220px
+  }
+     #crew-view .crew-grid{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:1rem;flex:1;align-content:start}
+   #crew-view .crew-card{background:rgba(255,255,255,.9);border-radius:14px;padding:1.5rem;border:1px solid rgba(0,0,0,.06);min-height:180px;display:flex;flex-direction:column;justify-content:space-between}
+  #crew-view .top{display:flex;gap:.75rem;align-items:center;margin-bottom:.75rem}
+  #crew-view .avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#4f46e5;color:#fff;font-weight:700}
+  #crew-view .name{font-weight:700}
+  #crew-view .meta{color:#6b7280;font-size:.9rem}
+  #crew-view .meta2{color:#374151;font-size:.9rem;margin-top:.5rem}
+  #crew-view .meter{background:#e5e7eb;height:12px;border-radius:999px;overflow:hidden;position:relative}
+  #crew-view .meter span{display:block;height:100%;background:linear-gradient(90deg,#4f46e5,#14B8A6)}
+     #crew-view .badgelist{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.75rem}
+   #crew-view .badge{font-size:.75rem;border:1px solid #e5e7eb;border-radius:999px;padding:.25rem .6rem;background:#f8fafc;color:#334155;font-weight:500}
+  #crew-view .btn.ghost{background:transparent;border:1px solid rgba(79,70,229,.4);color:#4f46e5;padding:.5rem .8rem;border-radius:10px;cursor:pointer}
+  #crew-view .btn.ghost:hover{background:rgba(79,70,229,.06)}
+  #crew-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
+</style>
+
+<script>
+(function(){
+     // ---- configuration ----
+   const cfg = (window.OPULENCE || {});
+   const PROXY_URL = "/api/crew"; // Use the proxy endpoint // recommended
+
+  const SLOT = document.getElementById('crew-view');
+  const grid = SLOT.querySelector('#crew-grid');
+  const status = SLOT.querySelector('#crew-status');
+  const searchEl = SLOT.querySelector('#crew-search');
+  const sortEl = SLOT.querySelector('#crew-sort');
+
+  // ---- data fetch ----
+  async function fetchCrew() {
+    try {
+      console.log('Fetching crew data from proxy:', PROXY_URL);
+      
+      const response = await fetch(PROXY_URL, { 
+        cache: "no-store",
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Proxy error:', response.status, errorText);
+        throw new Error(`Proxy error ${response.status}: ${errorText}`);
+      }
+      
+      const data = await response.json();
+      console.log('✅ Successfully fetched crew data from proxy:', data);
+      
+      return data.crews || [];
+    } catch (e) {
+      console.warn(e);
+
+      // Demo-safe fallback so your UI still shows during Loom
+      return [
+        { id:"demo1", name:"Crew A", role:"Framing", members:4, utilization:85, nextFreeISO:addHours(50), tags:["Lead+Apprentice","Truck #2"] },
+        { id:"demo2", name:"Crew B", role:"Electrical", members:3, utilization:70, nextFreeISO:addHours(18), tags:["Licensed","PPE"] },
+        { id:"demo3", name:"Crew C", role:"Finish", members:5, utilization:92, nextFreeISO:addHours(72), tags:["Punch List"] },
+        { id:"demo4", name:"Crew D", role:"Plumbing", members:2, utilization:40, nextFreeISO:addHours(6), tags:["Emergency"] },
+      ];
+    }
+  }
+
+  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
+  function addHours(h){ return new Date(Date.now()+h*3600e3).toISOString(); }
+  function fmtNextFree(iso){
+    if (!iso) return "—";
+    const d = new Date(iso);
+    if (isNaN(d)) return "—";
+    return d.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
+  }
+
+  // ---- render ----
+  function render(crews){
+         // filter
+     const q = (searchEl.value || "").trim().toLowerCase();
+     let rows = !q ? crews : crews.filter(c =>
+       (c.name||"").toLowerCase().includes(q) ||
+       (c.role||"").toLowerCase().includes(q) ||
+       (c.project||"").toLowerCase().includes(q) ||
+       (c.status||"").toLowerCase().includes(q) ||
+       (c.tags||[]).some(tag => tag.toLowerCase().includes(q))
+     );
+
+         // sort
+     const sort = sortEl.value;
+     rows.sort((a,b)=>{
+       if (sort==="name-asc") return (a.name.localeCompare(b.name));
+       if (sort==="name-desc") return (b.name.localeCompare(a.name));
+       if (sort==="role-asc") return (a.role.localeCompare(b.role));
+       if (sort==="project-asc") return (a.project.localeCompare(b.project));
+       return 0;
+     });
+
+                   // paint
+      grid.innerHTML = rows.map(c => {
+        const initials = (c.name.match(/\b\w/g)||[]).slice(0,2).join('').toUpperCase();
+               return `
+          <div class="crew-card">
+            <div class="top">
+              <div class="avatar">${initials||"?"}</div>
+              <div>
+                <div class="name">${escapeHTML(c.name)}</div>
+                <div class="meta">${escapeHTML(c.role)} • ${escapeHTML(c.status)}</div>
+              </div>
+            </div>
+            <div class="meta2">
+              <div><strong>Project:</strong> ${escapeHTML(c.project)}</div>
+              <div><strong>Contact:</strong> ${escapeHTML(c.contact)}</div>
+            </div>
+            ${Array.isArray(c.tags) && c.tags.length ? `
+              <div class="badgelist">
+                ${c.tags.map(t=>`<span class="badge">${escapeHTML(String(t))}</span>`).join("")}
+              </div>` : ``}
+          </div>
+        `;
+     }).join("");
+
+    status.style.display = rows.length ? "none" : "block";
+    status.textContent = "No crews match your filters.";
+  }
+
+  function escapeHTML(s){
+    return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  }
+
+  // ---- boot ----
+  let CREWS = [];
+  async function boot(){
+    status.style.display = "block";
+    status.textContent = "Loading crew…";
+    CREWS = await fetchCrew();
+    status.style.display = "none";
+    render(CREWS);
+  }
+
+  searchEl.addEventListener('input', ()=>render(CREWS));
+  sortEl.addEventListener('change', ()=>render(CREWS));
+
+  // This fragment runs when injected IF the host calls window.afterDashboardLoad('crew')
+  window.afterDashboardLoad = (name) => {
+    if (name === 'crew') boot();
+  };
+
+  // If user loaded crew.html as the default view, still initialize:
+  if (SLOT && !window._crewBooted) { window._crewBooted = true; boot(); }
+})();
+</script>
