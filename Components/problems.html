@@ -1,271 +1,69 @@
-<div id="schedule-view" class="dash dash-schedule">
-  <div class="panel">
-    <div class="panel-head">
-      <h3>📅 2-Week Project Schedule</h3>
-      <p>Track active projects and task progress at a glance</p>
-    </div>
+<div style="padding:16px;font-family:system-ui,Arial,sans-serif;">
+  <h3>Problems (Airtable)</h3>
+  <p>Click “Get” to fetch live data from the Problems table via the API.</p>
 
-    <div id="schedule-content" class="schedule-content">
-      <div class="loader" style="display:block; margin:2rem auto;"></div>
-    </div>
-
-    <div id="schedule-status" class="status muted" style="display:none"></div>
+  <div style="margin-bottom:12px;">
+    <button id="getBtn" style="padding:8px 12px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer;">Get</button>
+    <span id="status" style="margin-left:10px;color:#6b7280;display:none;"></span>
   </div>
+
+  <pre id="output" style="background:#0b1021;color:#cbd5e1;padding:12px;border-radius:8px;white-space:pre-wrap;word-break:break-word;min-height:160px;overflow:auto;"></pre>
 </div>
 
-<!-- Modal for task details -->
-<div id="taskModal" class="modal">
-  <div class="modal-content">
-    <h3 id="modalTitle"></h3>
-    <p><strong>Crew:</strong> <span id="modalCrew"></span></p>
-    <p><strong>Time:</strong> <span id="modalTime"></span></p>
-    <p><strong>Dependencies:</strong> <span id="modalDeps"></span></p>
-    <button onclick="closeModal()" class="modal-btn">Close</button>
-  </div>
-</div>
-
-<!-- Overlay -->
-<div id="modalOverlay" class="modal-overlay" onclick="closeModal()"></div>
-
-<style>
-  #schedule-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:1.25rem;box-shadow:0 8px 24px rgba(0,0,0,.08)}
-  #schedule-view .panel-head{text-align:center;margin-bottom:1.5rem}
-  #schedule-view .panel-head h3{color:#4f46e5;font-size:1.8rem;margin-bottom:.5rem}
-  #schedule-view .panel-head p{color:#6b7280;font-size:1rem}
-  #schedule-view .schedule-content{min-height:500px}
-  #schedule-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
-  #schedule-view .loader{display:inline-block;width:40px;height:40px;border:4px solid #e5e7eb;border-top-color:#4f46e5;border-radius:50%;animation:spin 1s linear infinite}
-  @keyframes spin { to { transform: rotate(360deg); } }
-  
-  /* Modal styles */
-  .modal{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%, -50%);background:white;padding:20px;border-radius:16px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:1000;width:320px;max-width:90%}
-  .modal-content h3{color:#4f46e5;margin-bottom:10px}
-  .modal-btn{margin-top:15px;padding:8px 14px;border:none;border-radius:8px;background:#4f46e5;color:white;cursor:pointer}
-  .modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999}
-</style>
-
-<!-- Load Google Charts -->
-<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
 <script>
 (function(){
-  // ---- configuration ----
-  const cfg = (window.OPULENCE || {});
-  // Default API for prod; when using Live Server, hit local Express on :3000
-  const defaultApi = '/api/schedule';
-  const devApi = 'http://localhost:3000/api/schedule';
+  // Optional overrides (safe): window.OPULENCE = { baseId: 'app...', problemsTableId: 'tbl...' };
+  const cfg = window.OPULENCE || {};
+
+  // Use local Express when running via Live Server; otherwise use Vercel serverless route
   const isLocalStatic = ['localhost','127.0.0.1'].includes(location.hostname);
-  const PROXY = (cfg.proxyUrl && cfg.proxyUrl.trim()) || (isLocalStatic ? devApi : defaultApi);
+  const baseApi = isLocalStatic ? 'http://localhost:3000/api/problems' : '/api/problems';
 
-  const SLOT = document.getElementById('schedule-view');
-  const content = SLOT.querySelector('#schedule-content');
-  const status = SLOT.querySelector('#schedule-status');
+  const getBtn = document.getElementById('getBtn');
+  const statusEl = document.getElementById('status');
+  const output = document.getElementById('output');
 
-  // ---- data fetch (via API only) ----
-  async function fetchScheduleData() {
+  function buildUrl() {
+    const u = new URL(baseApi, window.location.origin);
+    if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
+    if (cfg.problemsTableId) u.searchParams.set('problemsTableId', cfg.problemsTableId);
+    if (cfg.problemsTableName) u.searchParams.set('problemsTableName', cfg.problemsTableName);
+    // You can also set extras: view, maxRecords, returnFieldsByFieldId=true
+    return u.toString();
+  }
+
+  async function getProblems() {
     try {
-      console.log('Fetching schedule from:', PROXY);
-      const u = new URL(PROXY, window.location.origin);
-      if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
-      if (cfg.scheduleTableId) u.searchParams.set('scheduleTableId', cfg.scheduleTableId);
-      else if (cfg.scheduleTableName) u.searchParams.set('scheduleTableName', cfg.scheduleTableName);
+      getBtn.disabled = true;
+      getBtn.textContent = 'Loading…';
+      statusEl.style.display = 'inline';
+      statusEl.style.color = '#6b7280';
+      statusEl.textContent = 'Fetching from API…';
+      output.textContent = '';
 
-      const r = await fetch(u.toString(), { cache: "no-store" });
-      console.log('Schedule API response status:', r.status);
-
+      const url = buildUrl();
+      const r = await fetch(url, { cache: 'no-store' });
       if (!r.ok) {
-        const errorText = await r.text();
-        console.error('Schedule API error:', errorText);
-        throw new Error(`API error ${r.status}: ${errorText}`);
+        const txt = await r.text();
+        throw new Error(`HTTP ${r.status}: ${txt}`);
       }
-
       const data = await r.json();
-      console.log('Schedule data received:', data);
-      return { tasks: data.tasks || [], projects: data.projects || [] };
+
+      // Pretty-print the raw Airtable payload we returned ({ records: [...] })
+      output.textContent = JSON.stringify(data, null, 2);
+      statusEl.style.color = '#059669';
+      statusEl.textContent = `Done. ${Array.isArray(data.records) ? data.records.length : 0} records.`;
     } catch (e) {
-      console.warn('Schedule fetch failed, using demo data:', e);
-      status.style.display = "block";
-      status.textContent = "Failed to load live data. Showing demo data.";
-      status.style.color = "#6b7280";
-      return {
-        tasks: [
-          { id:"demo1", name:"Foundation Work", project:"Project 1", crew:"Crew A", startDate:"2025-08-07", endDate:"2025-08-09", duration:3, percentComplete:100, dependencies:null, status:"Completed" },
-          { id:"demo2", name:"Framing", project:"Project 1", crew:"Crew A", startDate:"2025-08-10", endDate:"2025-08-14", duration:5, percentComplete:50, dependencies:"demo1", status:"In Progress" },
-          { id:"demo3", name:"Roofing", project:"Project 1", crew:"Crew A", startDate:"2025-08-15", endDate:"2025-08-17", duration:3, percentComplete:0, dependencies:"demo2", status:"Pending" }
-        ],
-        projects: [
-          { id:"demo1", name:"Project 1" },
-          { id:"demo2", name:"Project 2" },
-          { id:"demo3", name:"Project 3" }
-        ]
-      };
-    }
-  }
-
-  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-  function daysToMilliseconds(days) { return days * 24 * 60 * 60 * 1000; }
-
-  // ---- render ----
-  function render(data) {
-    const { tasks } = data;
-    const chartData = createGanttData(tasks);
-    content.innerHTML = '<div id="gantt_chart" style="width: 100%; height: 500px;"></div>';
-    if (typeof google !== 'undefined' && google.charts) {
-      drawChart(chartData);
-    } else {
-      google.charts.load('current', {'packages':['gantt']});
-      google.charts.setOnLoadCallback(() => drawChart(chartData));
-    }
-  }
-
-  function createGanttData(tasks) {
-    const data = new google.visualization.DataTable();
-    data.addColumn('string', 'Task ID');
-    data.addColumn('string', 'Task Name');
-    data.addColumn('string', 'Resource');
-    data.addColumn('date', 'Start Date');
-    data.addColumn('date', 'End Date');
-    data.addColumn('number', 'Duration');
-    data.addColumn('number', 'Percent Complete');
-    data.addColumn('string', 'Dependencies');
-
-    const rows = tasks.map(task => {
-      const startDate = task.startDate ? new Date(task.startDate) : new Date();
-      const endDate = task.endDate ? new Date(task.endDate) : new Date(startDate.getTime() + daysToMilliseconds(task.duration || 1));
-      return [
-        task.id,
-        task.name,
-        task.project,
-        startDate,
-        endDate,
-        null,
-        clamp(Number(task.percentComplete || 0), 0, 100),
-        task.dependencies || null
-      ];
-    });
-
-    data.addRows(rows);
-    return data;
-  }
-
-  function drawChart(data) {
-    const options = {
-      height: 500,
-      gantt: {
-        trackHeight: 40,
-        palette: [
-          {color: '#6366f1', dark: '#4f46e5', light: '#eef2ff'},
-          {color: '#f43f5e', dark: '#e11d48', light: '#ffe4e6'},
-          {color: '#f59e0b', dark: '#d97706', light: '#fffbeb'}
-        ]
-      }
-    };
-    const chart = new google.visualization.Gantt(document.getElementById('gantt_chart'));
-    chart.draw(data, options);
-
-    google.visualization.events.addListener(chart, 'select', function() {
-      const selection = chart.getSelection();
-      if (selection.length) {
-        const row = selection[0].row;
-        const taskName = data.getValue(row, 1);
-        const project = data.getValue(row, 2);
-        const startDate = data.getValue(row, 3);
-        const endDate = data.getValue(row, 4);
-        const deps = data.getValue(row, 7) || 'None';
-
-        document.getElementById('modalTitle').innerText = taskName;
-        document.getElementById('modalCrew').innerText = project;
-        document.getElementById('modalTime').innerText = `${startDate.toDateString()} - ${endDate.toDateString()}`;
-        document.getElementById('modalDeps').innerText = deps;
-
-        document.getElementById('taskModal').style.display = 'block';
-        document.getElementById('modalOverlay').style.display = 'block';
-      }
-    });
-  }
-
-  // ---- modal + boot ----
-  window.closeModal = function() {
-    document.getElementById('taskModal').style.display = 'none';
-    document.getElementById('modalOverlay').style.display = 'none';
-  };
-
-  async function boot(){
-    console.log('Schedule dashboard booting...');
-    status.style.display = "block";
-    status.style.color = "#6b7280";
-    status.textContent = "Loading schedule data…";
-    try {
-      const data = await fetchScheduleData();
-      render(data);
-      status.style.display = "none";
-    } catch (e) {
-      console.error('Schedule boot error:', e);
-      status.style.display = "block";
-      status.style.color = "#e11d48";
-      status.textContent = "Unexpected error loading schedule.";
-    }
-  }
-
-  window.afterDashboardLoad = (name) => { if (name === 'schedule') boot(); };
-  if (SLOT && !window._scheduleBooted) { window._scheduleBooted = true; boot(); }
-})();
-</script>
-  function logMissingFragment(name, url, status){
-    console.warn(`[dashboard] Failed to load fragment "${name}" at "${url}" (status ${status})`);
-  }
-})();
-</script>
-        const row = selection[0].row;
-        const taskName = data.getValue(row, 1);
-        const project = data.getValue(row, 2);
-        const startDate = data.getValue(row, 3);
-        const endDate = data.getValue(row, 4);
-        const deps = data.getValue(row, 7) || 'None';
-
-        document.getElementById('modalTitle').innerText = taskName;
-        document.getElementById('modalCrew').innerText = project;
-        document.getElementById('modalTime').innerText = `${startDate.toDateString()} - ${endDate.toDateString()}`;
-        document.getElementById('modalDeps').innerText = deps;
-
-        document.getElementById('taskModal').style.display = 'block';
-        document.getElementById('modalOverlay').style.display = 'block';
-      }
-    });
-  }
-
-  // ---- modal functions ----
-  window.closeModal = function() {
-    document.getElementById('taskModal').style.display = 'none';
-    document.getElementById('modalOverlay').style.display = 'none';
-  };
-
-  // ---- boot ----
-  async function boot(){
-    status.style.display = "block";
-    status.textContent = "Loading schedule data…";
-    try {
-      const data = await fetchScheduleData();
-      render(data);
-      status.style.display = "none";
-    } catch (e) {
+      statusEl.style.color = '#e11d48';
+      statusEl.textContent = `Error: ${e.message}`;
+      output.textContent = '';
       console.error(e);
-      status.textContent = "Unexpected error loading schedule.";
+    } finally {
+      getBtn.disabled = false;
+      getBtn.textContent = 'Get';
     }
   }
 
-  // This fragment runs when injected IF the host calls window.afterDashboardLoad('schedule')
-  window.afterDashboardLoad = (name) => {
-    if (name === 'schedule') boot();
-  };
-
-  // If user loaded schedule.html as the default view, still initialize:
-  if (SLOT && !window._scheduleBooted) { window._scheduleBooted = true; boot(); }
-
-  // Asset base (adjust if Components moved under /public on Vercel; runtime path stays /Components)
-  const ASSET_BASE = ''; // set to '/public' ONLY if you intentionally nest, normally leave blank.
-  // Diagnostic helper for missing component fragments
-  function logMissingFragment(name, url, status){
-    console.warn(`[dashboard] Failed to load fragment "${name}" at "${url}" (status ${status})`);
-  }
+  getBtn.addEventListener('click', getProblems);
 })();
 </script>
