@@ -9,9 +9,6 @@
 
   <!-- Structured list -->
   <div id="cards" class="problems-cards"></div>
-
-  <!-- Raw JSON (kept for debugging) -->
-  <pre id="output" style="background:#0b1021;color:#cbd5e1;padding:12px;border-radius:8px;white-space:pre-wrap;word-break:break-word;min-height:160px;overflow:auto;margin-top:12px;"></pre>
 </div>
 
 <style>
@@ -86,7 +83,6 @@
 
   const getBtn = document.getElementById('getBtn');
   const statusEl = document.getElementById('status');
-  const output = document.getElementById('output');
   const cards = document.getElementById('cards');
 
   function buildUrl() {
@@ -163,7 +159,6 @@
       statusEl.style.display = 'inline';
       statusEl.style.color = '#6b7280';
       statusEl.textContent = 'Fetching from API…';
-      output.textContent = '';
       cards.innerHTML = '';
 
       const url = buildUrl();
@@ -178,17 +173,22 @@
       const records = data.records || [];
       renderCards(records);
 
-      // Keep raw JSON for debugging
-      output.textContent = JSON.stringify(data, null, 2);
-
       statusEl.style.color = '#059669';
       statusEl.textContent = `Done. ${records.length} records.`;
     } catch (e) {
       statusEl.style.color = '#e11d48';
       statusEl.textContent = `Error: ${e.message}`;
-      output.textContent = '';
       cards.innerHTML = '';
       console.error(e);
+    } finally {
+      getBtn.disabled = false;
+      getBtn.textContent = 'Get';
+    }
+  }
+
+  getBtn.addEventListener('click', getProblems);
+})();
+</script>
     } finally {
       getBtn.disabled = false;
       getBtn.textContent = 'Get';
