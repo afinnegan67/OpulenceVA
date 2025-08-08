@@ -7,8 +7,73 @@
     <span id="status" style="margin-left:10px;color:#6b7280;display:none;"></span>
   </div>
 
-  <pre id="output" style="background:#0b1021;color:#cbd5e1;padding:12px;border-radius:8px;white-space:pre-wrap;word-break:break-word;min-height:160px;overflow:auto;"></pre>
+  <!-- Structured list -->
+  <div id="cards" class="problems-cards"></div>
+
+  <!-- Raw JSON (kept for debugging) -->
+  <pre id="output" style="background:#0b1021;color:#cbd5e1;padding:12px;border-radius:8px;white-space:pre-wrap;word-break:break-word;min-height:160px;overflow:auto;margin-top:12px;"></pre>
 </div>
+
+<style>
+  .problems-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .problem-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.04);
+  }
+  .problem-card .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .problem-card .pid {
+    font-weight: 700;
+    color: #111827;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    color: #fff;
+    line-height: 1.6;
+    white-space: nowrap;
+  }
+  .badge.status-open { background:#e11d48; }
+  .badge.status-in-progress { background:#f59e0b; }
+  .badge.status-resolved { background:#059669; }
+  .badge.sev-high { background:#dc2626; }
+  .badge.sev-medium { background:#f59e0b; }
+  .badge.sev-low { background:#10b981; }
+  .problem-card .meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    font-size: 13px;
+    color:#374151;
+    margin-bottom: 8px;
+  }
+  .problem-card .meta div span {
+    color:#6b7280;
+  }
+  .problem-card .desc {
+    background:#f9fafb;
+    border:1px solid #f3f4f6;
+    border-radius:8px;
+    padding:8px;
+    color:#374151;
+    font-size:13px;
+  }
+</style>
 
 <script>
 (function(){
@@ -22,14 +87,73 @@
   const getBtn = document.getElementById('getBtn');
   const statusEl = document.getElementById('status');
   const output = document.getElementById('output');
+  const cards = document.getElementById('cards');
 
   function buildUrl() {
     const u = new URL(baseApi, window.location.origin);
     if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
     if (cfg.problemsTableId) u.searchParams.set('problemsTableId', cfg.problemsTableId);
     if (cfg.problemsTableName) u.searchParams.set('problemsTableName', cfg.problemsTableName);
-    // You can also set extras: view, maxRecords, returnFieldsByFieldId=true
     return u.toString();
+  }
+
+  function escapeHTML(s){
+    return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  }
+  function fmtDate(d){
+    if (!d) return '—';
+    const t = new Date(d);
+    return isNaN(t) ? '—' : t.toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
+  }
+  function statusClass(s){
+    const k = String(s||'').toLowerCase();
+    if (k === 'open') return 'status-open';
+    if (k === 'resolved') return 'status-resolved';
+    return 'status-in-progress';
+  }
+  function severityClass(s){
+    const k = String(s||'').toLowerCase();
+    if (k === 'high') return 'sev-high';
+    if (k === 'low') return 'sev-low';
+    return 'sev-medium';
+  }
+
+  function renderCards(records){
+    if (!Array.isArray(records) || records.length === 0){
+      cards.innerHTML = '<p style="color:#6b7280;text-align:center;padding:12px;">No records found.</p>';
+      return;
+    }
+
+    cards.innerHTML = records.map(r => {
+      const f = r.fields || {};
+      const pid = f['Problem ID'] || '';
+      const type = f['Type'] || '';
+      const desc = f['Description'] || '';
+      const proj = f['Project'] || '';
+      const reported = f['Reported Date'] || '';
+      const status = f['Status'] || '';
+      const severity = f['Severity'] || '';
+      const assigned = f['Assigned to'] || '';
+
+      return `
+        <div class="problem-card">
+          <div class="card-head">
+            <div class="pid">${escapeHTML(pid)}</div>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <span class="badge ${statusClass(status)}">${escapeHTML(status || '—')}</span>
+              <span class="badge ${severityClass(severity)}">${escapeHTML(severity || '—')}</span>
+            </div>
+          </div>
+          <div class="meta">
+            <div><span>Type:</span> ${escapeHTML(type || '—')}</div>
+            <div><span>Project:</span> ${escapeHTML(proj || '—')}</div>
+            <div><span>Assigned:</span> ${escapeHTML(assigned || '—')}</div>
+            <div><span>Reported:</span> ${escapeHTML(fmtDate(reported))}</div>
+          </div>
+          <div class="desc">${escapeHTML(desc || '—')}</div>
+        </div>
+      `;
+    }).join('');
   }
 
   async function getProblems() {
@@ -40,6 +164,7 @@
       statusEl.style.color = '#6b7280';
       statusEl.textContent = 'Fetching from API…';
       output.textContent = '';
+      cards.innerHTML = '';
 
       const url = buildUrl();
       const r = await fetch(url, { cache: 'no-store' });
@@ -49,14 +174,20 @@
       }
       const data = await r.json();
 
-      // Pretty-print the raw Airtable payload we returned ({ records: [...] })
+      // Pretty cards
+      const records = data.records || [];
+      renderCards(records);
+
+      // Keep raw JSON for debugging
       output.textContent = JSON.stringify(data, null, 2);
+
       statusEl.style.color = '#059669';
-      statusEl.textContent = `Done. ${Array.isArray(data.records) ? data.records.length : 0} records.`;
+      statusEl.textContent = `Done. ${records.length} records.`;
     } catch (e) {
       statusEl.style.color = '#e11d48';
       statusEl.textContent = `Error: ${e.message}`;
       output.textContent = '';
+      cards.innerHTML = '';
       console.error(e);
     } finally {
       getBtn.disabled = false;
