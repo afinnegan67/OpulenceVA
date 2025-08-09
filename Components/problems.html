@@ -159,16 +159,44 @@
   const fmtDate = d => { if (!d) return '—'; const t=new Date(d); return isNaN(t)?'—':t.toLocaleDateString([], {month:'short', day:'numeric'}); };
   const escapeHTML = s => String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 
+  // NEW: normalize heterogeneous Airtable fields to a common shape
+  function normalizeTasks(tasks){
+    return tasks.map(t => {
+      // names
+      const name = t.name || t.task || t.Task || t.Title || t.taskName || t['Task Name'] || t.id || t.taskId || '—';
+      const project = t.project || t.Project || t['Project Name'] || '';
+      // crew can be array, comma string, or single value
+      let crew = t.crew ?? t.Crew ?? t['Assigned Crew'] ?? t['Crew Member'] ?? '';
+      if (Array.isArray(crew)) crew = crew.join(', ');
+      crew = String(crew || '').trim();
+      // dates can live under many keys
+      const startDate = t.startDate || t.start || t['Start'] || t['Start Date'] || t['StartDate'] || '';
+      const endDate   = t.endDate   || t.end   || t['End']   || t['End Date']   || t['EndDate']   || '';
+      // percent
+      let percentComplete = t.percentComplete ?? t['Percent Complete'] ?? t['% Complete'] ?? t.percent ?? t['Percent'] ?? 0;
+      percentComplete = parsePercent(percentComplete);
+      return { ...t, name, project, crew, startDate, endDate, percentComplete };
+    });
+  }
+
   function buildIssues(tasks){
     const issues = [];
     const today = new Date(); today.setHours(0,0,0,0);
 
-    // Index tasks by crew for conflict detection
+    // Index tasks by each crew member for conflict detection
     const byCrew = new Map();
     for (const t of tasks){
-      const crew = String(t.crew||'').trim();
-      if (!byCrew.has(crew)) byCrew.set(crew, []);
-      byCrew.get(crew).push(t);
+      const crewTokens = String(t.crew||'').split(',').map(s=>s.trim()).filter(Boolean);
+      if (!crewTokens.length) {
+        // still index under empty to keep other checks
+        if (!byCrew.has('')) byCrew.set('', []);
+        byCrew.get('').push(t);
+      } else {
+        for (const c of crewTokens){
+          if (!byCrew.has(c)) byCrew.set(c, []);
+          byCrew.get(c).push(t);
+        }
+      }
     }
 
     // Generic issues
@@ -176,7 +204,9 @@
       const s = parseDate(t.startDate);
       const e = parseDate(t.endDate);
       const pct = parsePercent(t.percentComplete);
-      if (!s || (!e && e !== null)) {
+
+      // invalid dates: missing start OR end provided but invalid
+      if (!s || (t.endDate != null && t.endDate !== '' && !e)) {
         issues.push({ type:'invalid-dates', task:t, detail:'Missing or invalid date(s)' });
       }
       if (s && e && e < s) {
@@ -190,9 +220,9 @@
       }
     }
 
-    // Conflicts: overlapping tasks per crew
+    // Conflicts: overlapping tasks per crew member
     for (const [crew, list] of byCrew.entries()){
-      if (!crew) continue; // skip missing crew
+      if (!crew) continue; // skip missing crew here
       const arr = list.map(t => ({ t, s:parseDate(t.startDate), e:parseDate(t.endDate)||parseDate(t.startDate) }))
                       .filter(x => x.s);
       arr.sort((a,b) => a.s - b.s);
@@ -202,7 +232,7 @@
           issues.push({
             type:'conflict',
             task:cur.t,
-            detail:`Overlaps with another task for ${crew} (${fmtDate(prev.s)}–${fmtDate(prev.e)})`
+            detail:`Overlaps (${fmtDate(prev.s)}–${fmtDate(prev.e)}) for ${crew}`
           });
         }
       }
@@ -229,11 +259,15 @@
   }
 
   function populateFilters(tasks){
-    const crews = [...new Set(tasks.map(t => String(t.crew||'').trim()).filter(Boolean))].sort();
-    const projs = [...new Set(tasks.map(t => String(t.project||'').trim()).filter(Boolean))].sort();
+    // Use normalized tasks; support multi-crew tokens
+    const crews = new Set(), projs = new Set();
+    for (const t of tasks){
+      String(t.crew||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(c => crews.add(c));
+      if (t.project) projs.add(String(t.project));
+    }
     const crewVal = filterCrew.value, projVal = filterProject.value;
-    filterCrew.innerHTML = `<option value="">All</option>` + crews.map(c=>`<option ${c===crewVal?'selected':''}>${escapeHTML(c)}</option>`).join('');
-    filterProject.innerHTML = `<option value="">All</option>` + projs.map(p=>`<option ${p===projVal?'selected':''}>${escapeHTML(p)}</option>`).join('');
+    filterCrew.innerHTML = `<option value="">All</option>` + [...crews].sort().map(c=>`<option ${c===crewVal?'selected':''}>${escapeHTML(c)}</option>`).join('');
+    filterProject.innerHTML = `<option value="">All</option>` + [...projs].sort().map(p=>`<option ${p===projVal?'selected':''}>${escapeHTML(p)}</option>`).join('');
   }
 
   function visible(issues){
@@ -295,7 +329,8 @@
         throw new Error(`HTTP ${r.status}: ${txt}`);
       }
       const data = await r.json();
-      TASKS = Array.isArray(data.tasks) ? data.tasks : [];
+      const raw = Array.isArray(data.tasks) ? data.tasks : [];
+      TASKS = normalizeTasks(raw); // normalize before analysis
 
       populateFilters(TASKS);
       ISSUES = buildIssues(TASKS);
