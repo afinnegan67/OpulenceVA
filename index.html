@@ -170,8 +170,9 @@
 
         if (window.afterDashboardLoad) window.afterDashboardLoad(name);
 
-        // Auto-init: trigger GET on crew as soon as it loads
-        if (name === 'crew') {
+        // Auto-init: trigger GET on supported dashboards as soon as they load
+        const AUTO_INIT = new Set(['crew','overview','schedule','problems']);
+        if (AUTO_INIT.has(name)) {
           setTimeout(() => {
             const btn = spaceEl.querySelector('#getBtn');
             if (btn && !btn.disabled) btn.click();
