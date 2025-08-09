@@ -169,6 +169,15 @@
         executeScripts(spaceEl);
 
         if (window.afterDashboardLoad) window.afterDashboardLoad(name);
+
+        // Auto-init: trigger GET on crew as soon as it loads
+        if (name === 'crew') {
+          setTimeout(() => {
+            const btn = spaceEl.querySelector('#getBtn');
+            if (btn && !btn.disabled) btn.click();
+          }, 50);
+        }
+
         // maintain SPA deep-link format (/#/crew)
         location.hash = `#/${name}`;
       } catch (err) {
