@@ -1,109 +1,96 @@
-(function(){
-  const cfg = window.OPULENCE || {};
-  const isLocalStatic = ['localhost','127.0.0.1'].includes(location.hostname);
-  const baseApi = isLocalStatic ? 'http://localhost:3000/api/overview' : '/api/overview';
+export default async function handler(req, res) {
+  // CORS + preflight (helps during Live Server testing)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(204).end();
 
-  const getBtn = document.getElementById('getBtn');
-  const statusEl = document.getElementById('status');
-  const cards = document.getElementById('cards');
-
-  function buildUrl() {
-    const u = new URL(baseApi, window.location.origin);
-    if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
-    if (cfg.overviewTableId) u.searchParams.set('overviewTableId', cfg.overviewTableId);
-    if (cfg.overviewTableName) u.searchParams.set('overviewTableName', cfg.overviewTableName);
-    return u.toString();
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
-  function escapeHTML(s){
-    return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-  }
-  function fmtDate(d){
-    if (!d) return '—';
-    const t = new Date(d);
-    return isNaN(t) ? '—' : t.toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
-  }
-  function statusClass(s){
-    const k = String(s||'').toLowerCase().replace(/\s+/g,'-');
-    if (k.includes('progress')) return 'status-in-progress';
-    if (k.includes('done') || k.includes('complete')) return 'status-done';
-    if (k.includes('todo') || k.includes('not-started')) return 'status-todo';
-    return 'status-in-progress';
-  }
-  function percent(n){
-    const v = Number.isFinite(+n) ? +n : 0;
-    return Math.max(0, Math.min(100, v));
+  // Polyfill fetch for older runtimes
+  async function getFetch() {
+    if (typeof fetch !== 'undefined') return fetch;
+    const mod = await import('node-fetch');
+    return mod.default;
   }
 
-  function renderCards(projects){
-    if (!Array.isArray(projects) || !projects.length){
-      cards.innerHTML = '<p style="color:#6b7280;text-align:center;padding:12px;">No projects found.</p>';
-      return;
+  try {
+    const baseId = req.query.baseId || process.env.AIRTABLE_BASE_ID;
+    const apiKey = process.env.AIRTABLE_API_KEY || process.env.AIRTABLE_TOKEN;
+    const table =
+      req.query.overviewTableId ||
+      req.query.overviewTableName ||
+      process.env.AIRTABLE_OVERVIEW_TABLE_ID ||
+      process.env.AIRTABLE_OVERVIEW_TABLE_NAME ||
+      process.env.AIRTABLE_OVERVIEW_TABLE ||
+      'Overview';
+
+    if (!baseId || !apiKey || !table) {
+      return res.status(500).json({
+        error: 'Missing configuration',
+        detail: { hasBaseId: !!baseId, hasApiKey: !!apiKey, table }
+      });
     }
-    cards.innerHTML = projects.map(p => {
-      const pct = percent(p.percentComplete);
-      return `
-        <div class="proj-card">
-          <div class="proj-head">
-            <div>
-              <div class="proj-title">${escapeHTML(p.name || '—')}</div>
-              <div style="color:#6b7280;font-size:12px;">${escapeHTML(p.projectId || '')}</div>
-            </div>
-            <span class="badge ${statusClass(p.status)}">${escapeHTML(p.status || '—')}</span>
-          </div>
 
-          <div class="proj-meta">
-            <div><span>Client:</span> ${escapeHTML(p.client || '—')}</div>
-            <div><span>Percent:</span> ${pct}%</div>
-            <div><span>Start:</span> ${escapeHTML(fmtDate(p.startDate))}</div>
-            <div><span>End:</span> ${escapeHTML(fmtDate(p.endDate))}</div>
-          </div>
+    const $fetch = await getFetch();
 
-          <div class="progress" aria-label="Percent Complete" title="${pct}% complete">
-            <div class="bar" style="width:${pct}%"></div>
-          </div>
+    // Paged fetch
+    const makeUrl = (offset) => {
+      const u = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
+      u.searchParams.set('pageSize', '100');
+      if (offset) u.searchParams.set('offset', offset);
+      if (req.query.view) u.searchParams.set('view', req.query.view);
+      if (req.query.maxRecords) u.searchParams.set('maxRecords', req.query.maxRecords);
+      if (req.query.returnFieldsByFieldId === 'true') u.searchParams.set('returnFieldsByFieldId', 'true');
+      return u.toString();
+    };
 
-          <div class="money">
-            <div><span style="color:#6b7280;">Budget:</span> ${escapeHTML(p.budget || '—')}</div>
-            <div><span style="color:#6b7280;">Spent:</span> ${escapeHTML(p.spent || '—')}</div>
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  async function getOverview() {
-    try {
-      getBtn.disabled = true;
-      getBtn.textContent = 'Loading…';
-      statusEl.style.display = 'inline';
-      statusEl.style.color = '#6b7280';
-      statusEl.textContent = 'Fetching from API…';
-      cards.innerHTML = '';
-
-      const url = buildUrl();
-      const r = await fetch(url, { cache: 'no-store' });
+    const records = [];
+    let next = makeUrl();
+    while (next) {
+      const r = await $fetch(next, { headers: { Authorization: `Bearer ${apiKey}` } });
       if (!r.ok) {
-        const txt = await r.text();
-        throw new Error(`HTTP ${r.status}: ${txt}`);
+        const text = await r.text();
+        return res.status(r.status).json({ error: 'Airtable error', status: r.status, detail: text, baseId, table });
       }
-      const data = await r.json();
-      const projects = data.projects || [];
-
-      renderCards(projects);
-
-      statusEl.style.color = '#059669';
-      statusEl.textContent = `Done. ${projects.length} projects.`;
-    } catch (e) {
-      statusEl.style.color = '#e11d48';
-      statusEl.textContent = `Error: ${e.message}`;
-      console.error(e);
-      cards.innerHTML = '';
-    } finally {
-      getBtn.disabled = false;
-      getBtn.textContent = 'Get';
+      const j = await r.json();
+      records.push(...(j.records || []));
+      next = j.offset ? makeUrl(j.offset) : null;
     }
-  }
 
-  getBtn.addEventListener('click', getOverview);
-})();
+    // Normalize fields
+    const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+    const parsePercent = (v) => {
+      if (typeof v === 'number') return v <= 1 ? Math.round(v * 100) : Math.round(v);
+      if (typeof v === 'string') {
+        const t = v.trim();
+        if (t.endsWith('%')) return clamp(parseFloat(t.slice(0, -1)) || 0, 0, 100);
+        const n = parseFloat(t);
+        if (!isNaN(n)) return n <= 1 ? Math.round(n * 100) : Math.round(n);
+      }
+      return 0;
+    };
+
+    const projects = records.map(({ id, fields: f = {} }) => ({
+      id,
+      projectId: f['Project ID'] || f['A Project ID'] || '',
+      name: f['Project Name'] || f['A Project Name'] || f['Name'] || '',
+      client: f['Client'] || f['A Client'] || '',
+      startDate: f['Start Date'] || f['A Start Date'] || '',
+      endDate: f['End Date'] || f['A End Date'] || '',
+      status: f['Status'] || f['A Status'] || '',
+      percentComplete: parsePercent(f['Percent Complete'] ?? f['% Percent Complete']),
+      budget: f['Budget'] || f['A Budget'] || '',
+      spent: f['Spent'] || f['A Spent'] || ''
+    }));
+
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ baseId, table, count: projects.length, projects });
+  } catch (e) {
+    console.error('[api/overview]', e);
+    return res.status(500).json({ error: 'Function crashed', detail: e.message });
+  }
+}
