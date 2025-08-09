@@ -1,190 +1,326 @@
-<div style="padding:16px;font-family:system-ui,Arial,sans-serif;">
-  <h3>Problems (Airtable)</h3>
-  <p>Click “Get” to fetch live data from the Problems table via the API.</p>
-
-  <div style="margin-bottom:12px;">
-    <button id="getBtn" style="padding:8px 12px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer;">Get</button>
-    <span id="status" style="margin-left:10px;color:#6b7280;display:none;"></span>
+<div class="pb-wrap">
+  <div class="pb-head glass">
+    <div>
+      <h3>Problems</h3>
+      <p>Detected scheduling issues from Airtable</p>
+    </div>
+    <div class="controls">
+      <input id="search" class="input" placeholder="Search task, project, crew…" />
+      <label class="pill">
+        <span>Type</span>
+        <select id="filterType" class="select">
+          <option value="">All</option>
+          <option value="conflict">Crew Conflict</option>
+          <option value="overdue">Overdue</option>
+          <option value="missing-crew">Missing Crew</option>
+          <option value="invalid-dates">Invalid Dates</option>
+          <option value="end-before-start">End Before Start</option>
+        </select>
+      </label>
+      <label class="pill">
+        <span>Crew</span>
+        <select id="filterCrew" class="select"><option value="">All</option></select>
+      </label>
+      <label class="pill">
+        <span>Project</span>
+        <select id="filterProject" class="select"><option value="">All</option></select>
+      </label>
+      <button id="getBtn" class="btn">Refresh</button>
+      <span id="status" class="status" style="display:none;"></span>
+    </div>
   </div>
 
-  <!-- Structured list -->
-  <div id="cards" class="problems-cards"></div>
+  <div id="kpis" class="kpis">
+    <!-- KPI tiles -->
+  </div>
+
+  <div class="panel glass">
+    <div class="list-head">
+      <div>Type</div>
+      <div>Task</div>
+      <div>Project</div>
+      <div>Crew</div>
+      <div>Dates</div>
+      <div>Details</div>
+    </div>
+    <div id="list" class="list">
+      <!-- Issues rows -->
+    </div>
+  </div>
 </div>
 
 <style>
-  .problems-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 12px;
-    margin-top: 8px;
+  .pb-wrap { font-family: system-ui, Arial, sans-serif; color:#e5e7eb; }
+  .pb-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:14px; padding:14px 16px; border-radius:16px; }
+  .pb-head h3 { margin:0; font-size:1.25rem; color:#dbeafe; letter-spacing:.2px; }
+  .pb-head p { margin:2px 0 0; font-size:.9rem; color:#a5b4fc; }
+  .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .input, .select {
+    background: rgba(255,255,255,.06); color:#e5e7eb; border:1px solid rgba(255,255,255,.18);
+    border-radius:10px; padding:8px 10px; outline:none; min-width:210px;
   }
-  .problem-card {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,.04);
+
+  .glass {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    backdrop-filter: blur(14px) saturate(120%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 14px 44px rgba(0,0,0,0.28), 0 2px 10px rgba(0,0,0,0.18);
+    position: relative;
   }
-  .problem-card .card-head {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 8px;
+  .glass::before {
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.10), transparent 30%),
+      linear-gradient(90deg, rgba(255,255,255,.05), transparent 40% 60%, rgba(255,255,255,.04));
   }
-  .problem-card .pid {
-    font-weight: 700;
-    color: #111827;
+
+  .btn {
+    appearance:none; border:1px solid rgba(255,255,255,.22); color:#0b1021; font-weight:700;
+    background: linear-gradient(135deg, #60a5fa 0%, #8b5cf6 100%);
+    padding:8px 12px; border-radius:10px; cursor:pointer;
   }
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
+  .status { font-size:.9rem; color:#a5b4fc; }
+
+  .kpis {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap:12px; margin-bottom:14px;
+  }
+  .tile { padding:14px; border-radius:16px; position:relative; }
+  .tile h4 { margin:0 0 4px; font-size:.85rem; color:#c7d2fe; font-weight:600; }
+  .tile .value { font-size:1.6rem; font-weight:800; color:#ffffff; }
+
+  .panel { padding:14px; border-radius:16px; }
+  .list-head, .row {
+    display:grid; grid-template-columns: 1.1fr 1.6fr 1.2fr 1.1fr 1.2fr 1.4fr; gap:10px; align-items:center;
+  }
+  .list-head { color:#93c5fd; font-size:.85rem; border-bottom:1px solid rgba(255,255,255,.08); padding-bottom:8px; margin-bottom:6px; }
+  .row { padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06); }
   .badge {
-    display: inline-block;
-    font-size: 12px;
-    padding: 2px 8px;
-    border-radius: 999px;
-    color: #fff;
-    line-height: 1.6;
-    white-space: nowrap;
+    display:inline-block; font-size:.75rem; padding:4px 8px; border-radius:999px; color:#fff; text-transform:capitalize;
+    border:1px solid rgba(255,255,255,.18);
   }
-  .badge.status-open { background:#e11d48; }
-  .badge.status-in-progress { background:#f59e0b; }
-  .badge.status-resolved { background:#059669; }
-  .badge.sev-high { background:#dc2626; }
-  .badge.sev-medium { background:#f59e0b; }
-  .badge.sev-low { background:#10b981; }
-  .problem-card .meta {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 12px;
-    font-size: 13px;
-    color:#374151;
-    margin-bottom: 8px;
-  }
-  .problem-card .meta div span {
-    color:#6b7280;
-  }
-  .problem-card .desc {
-    background:#f9fafb;
-    border:1px solid #f3f4f6;
-    border-radius:8px;
-    padding:8px;
-    color:#374151;
-    font-size:13px;
+  .type-conflict { background:linear-gradient(135deg, #ef4444, #f97316); }
+  .type-overdue { background:linear-gradient(135deg, #f43f5e, #fb7185); }
+  .type-missing-crew { background:linear-gradient(135deg, #6b7280, #94a3b8); }
+  .type-invalid-dates { background:linear-gradient(135deg, #94a3b8, #64748b); }
+  .type-end-before-start { background:linear-gradient(135deg, #0ea5e9, #3b82f6); }
+  .muted { color:#a5b4fc; font-size:.9rem; }
+  @media (max-width: 980px){
+    .list-head, .row { grid-template-columns: 1.1fr 1.6fr 1.2fr 1.1fr 1.4fr; }
   }
 </style>
 
 <script>
 (function(){
-  // Optional overrides (safe): window.OPULENCE = { baseId: 'app...', problemsTableId: 'tbl...' };
   const cfg = window.OPULENCE || {};
-
-  // Use local Express when running via Live Server; otherwise use Vercel serverless route
   const isLocalStatic = ['localhost','127.0.0.1'].includes(location.hostname);
-  const baseApi = isLocalStatic ? 'http://localhost:3000/api/problems' : '/api/problems';
+  const baseApi = isLocalStatic ? 'http://localhost:3000/api/schedule' : '/api/schedule';
 
   const getBtn = document.getElementById('getBtn');
   const statusEl = document.getElementById('status');
-  const cards = document.getElementById('cards');
+  const kpisEl = document.getElementById('kpis');
+  const listEl = document.getElementById('list');
+  const filterType = document.getElementById('filterType');
+  const filterCrew = document.getElementById('filterCrew');
+  const filterProject = document.getElementById('filterProject');
+  const searchEl = document.getElementById('search');
 
   function buildUrl() {
     const u = new URL(baseApi, window.location.origin);
     if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
-    if (cfg.problemsTableId) u.searchParams.set('problemsTableId', cfg.problemsTableId);
-    if (cfg.problemsTableName) u.searchParams.set('problemsTableName', cfg.problemsTableName);
+    if (cfg.scheduleTableId) u.searchParams.set('scheduleTableId', cfg.scheduleTableId);
+    if (cfg.scheduleTableName) u.searchParams.set('scheduleTableName', cfg.scheduleTableName);
     return u.toString();
   }
 
-  function escapeHTML(s){
-    return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
+  const clamp = (n,min,max)=>Math.max(min,Math.min(max,n));
+  function parseDate(value){
+    if (!value) return null;
+    if (value instanceof Date) return isNaN(value) ? null : value;
+    if (typeof value === 'number') return new Date(value);
+    const s = String(value).trim();
+    let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) { const dt = new Date(+m[1], +m[2]-1, +m[3]); return isNaN(dt) ? null : dt; }
+    m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+    if (m) { const dt = new Date(+m[3], +m[1]-1, +m[2]); return isNaN(dt) ? null : dt; }
+    const dt = new Date(s); return isNaN(dt) ? null : dt;
   }
-  function fmtDate(d){
-    if (!d) return '—';
-    const t = new Date(d);
-    return isNaN(t) ? '—' : t.toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
+  function parsePercent(v){
+    if (typeof v === 'number') return v <= 1 ? Math.round(v * 100) : Math.round(v);
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (t.endsWith('%')) return clamp(parseFloat(t.slice(0,-1)) || 0, 0, 100);
+      const n = parseFloat(t);
+      if (!isNaN(n)) return n <= 1 ? Math.round(n*100) : Math.round(n);
+    }
+    return 0;
   }
-  function statusClass(s){
-    const k = String(s||'').toLowerCase();
-    if (k === 'open') return 'status-open';
-    if (k === 'resolved') return 'status-resolved';
-    return 'status-in-progress';
-  }
-  function severityClass(s){
-    const k = String(s||'').toLowerCase();
-    if (k === 'high') return 'sev-high';
-    if (k === 'low') return 'sev-low';
-    return 'sev-medium';
-  }
+  const fmtDate = d => { if (!d) return '—'; const t=new Date(d); return isNaN(t)?'—':t.toLocaleDateString([], {month:'short', day:'numeric'}); };
+  const escapeHTML = s => String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 
-  function renderCards(records){
-    if (!Array.isArray(records) || records.length === 0){
-      cards.innerHTML = '<p style="color:#6b7280;text-align:center;padding:12px;">No records found.</p>';
-      return;
+  function buildIssues(tasks){
+    const issues = [];
+    const today = new Date(); today.setHours(0,0,0,0);
+
+    // Index tasks by crew for conflict detection
+    const byCrew = new Map();
+    for (const t of tasks){
+      const crew = String(t.crew||'').trim();
+      if (!byCrew.has(crew)) byCrew.set(crew, []);
+      byCrew.get(crew).push(t);
     }
 
-    cards.innerHTML = records.map(r => {
-      const f = r.fields || {};
-      const pid = f['Problem ID'] || '';
-      const type = f['Type'] || '';
-      const desc = f['Description'] || '';
-      const proj = f['Project'] || '';
-      const reported = f['Reported Date'] || '';
-      const status = f['Status'] || '';
-      const severity = f['Severity'] || '';
-      const assigned = f['Assigned to'] || '';
+    // Generic issues
+    for (const t of tasks){
+      const s = parseDate(t.startDate);
+      const e = parseDate(t.endDate);
+      const pct = parsePercent(t.percentComplete);
+      if (!s || (!e && e !== null)) {
+        issues.push({ type:'invalid-dates', task:t, detail:'Missing or invalid date(s)' });
+      }
+      if (s && e && e < s) {
+        issues.push({ type:'end-before-start', task:t, detail:'End date before start date' });
+      }
+      if (!String(t.crew||'').trim()) {
+        issues.push({ type:'missing-crew', task:t, detail:'No crew assigned' });
+      }
+      if (e && e < today && pct < 100) {
+        issues.push({ type:'overdue', task:t, detail:`Past due (${fmtDate(e)}) at ${pct}%` });
+      }
+    }
 
+    // Conflicts: overlapping tasks per crew
+    for (const [crew, list] of byCrew.entries()){
+      if (!crew) continue; // skip missing crew
+      const arr = list.map(t => ({ t, s:parseDate(t.startDate), e:parseDate(t.endDate)||parseDate(t.startDate) }))
+                      .filter(x => x.s);
+      arr.sort((a,b) => a.s - b.s);
+      for (let i=1;i<arr.length;i++){
+        const prev = arr[i-1], cur = arr[i];
+        if (prev.e >= cur.s) {
+          issues.push({
+            type:'conflict',
+            task:cur.t,
+            detail:`Overlaps with another task for ${crew} (${fmtDate(prev.s)}–${fmtDate(prev.e)})`
+          });
+        }
+      }
+    }
+
+    return issues;
+  }
+
+  function summarize(issues){
+    const total = issues.length;
+    const counts = { conflict:0, overdue:0, 'missing-crew':0, 'invalid-dates':0, 'end-before-start':0 };
+    for (const i of issues){ if (counts[i.type] != null) counts[i.type]++; }
+    return { total, counts };
+  }
+
+  function renderKPIs(sum){
+    kpisEl.innerHTML = `
+      <div class="tile glass"><h4>Total Issues</h4><div class="value">${sum.total}</div></div>
+      <div class="tile glass"><h4>Conflicts</h4><div class="value">${sum.counts.conflict}</div></div>
+      <div class="tile glass"><h4>Overdue</h4><div class="value">${sum.counts.overdue}</div></div>
+      <div class="tile glass"><h4>Missing Crew</h4><div class="value">${sum.counts['missing-crew']}</div></div>
+      <div class="tile glass"><h4>Invalid Dates</h4><div class="value">${sum.counts['invalid-dates'] + sum.counts['end-before-start']}</div></div>
+    `;
+  }
+
+  function populateFilters(tasks){
+    const crews = [...new Set(tasks.map(t => String(t.crew||'').trim()).filter(Boolean))].sort();
+    const projs = [...new Set(tasks.map(t => String(t.project||'').trim()).filter(Boolean))].sort();
+    const crewVal = filterCrew.value, projVal = filterProject.value;
+    filterCrew.innerHTML = `<option value="">All</option>` + crews.map(c=>`<option ${c===crewVal?'selected':''}>${escapeHTML(c)}</option>`).join('');
+    filterProject.innerHTML = `<option value="">All</option>` + projs.map(p=>`<option ${p===projVal?'selected':''}>${escapeHTML(p)}</option>`).join('');
+  }
+
+  function visible(issues){
+    const type = filterType.value;
+    const crew = filterCrew.value;
+    const proj = filterProject.value;
+    const q = searchEl.value.trim().toLowerCase();
+    return issues.filter(i => {
+      const t = i.task || {};
+      if (type && i.type !== type) return false;
+      if (crew && String(t.crew||'') !== crew) return false;
+      if (proj && String(t.project||'') !== proj) return false;
+      if (q){
+        const hay = `${t.name||''} ${t.project||''} ${t.crew||''} ${i.detail||''}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderList(issues){
+    if (!issues.length){
+      listEl.innerHTML = `<div class="muted" style="padding:12px;">No issues detected.</div>`;
+      return;
+    }
+    listEl.innerHTML = issues.map(i => {
+      const t = i.task || {};
+      const dates = `${fmtDate(t.startDate)} — ${fmtDate(t.endDate)}`;
+      const badgeClass = `type-${i.type}`;
+      const typeLabel = i.type.replace(/-/g,' ');
       return `
-        <div class="problem-card">
-          <div class="card-head">
-            <div class="pid">${escapeHTML(pid)}</div>
-            <div style="display:flex;gap:6px;align-items:center;">
-              <span class="badge ${statusClass(status)}">${escapeHTML(status || '—')}</span>
-              <span class="badge ${severityClass(severity)}">${escapeHTML(severity || '—')}</span>
-            </div>
-          </div>
-          <div class="meta">
-            <div><span>Type:</span> ${escapeHTML(type || '—')}</div>
-            <div><span>Project:</span> ${escapeHTML(proj || '—')}</div>
-            <div><span>Assigned:</span> ${escapeHTML(assigned || '—')}</div>
-            <div><span>Reported:</span> ${escapeHTML(fmtDate(reported))}</div>
-          </div>
-          <div class="desc">${escapeHTML(desc || '—')}</div>
+        <div class="row">
+          <div><span class="badge ${badgeClass}">${escapeHTML(typeLabel)}</span></div>
+          <div class="muted">${escapeHTML(t.name || t.taskId || t.id || '—')}</div>
+          <div class="muted">${escapeHTML(t.project || '—')}</div>
+          <div class="muted">${escapeHTML(t.crew || '—')}</div>
+          <div class="muted">${dates}</div>
+          <div class="muted">${escapeHTML(i.detail || '—')}</div>
         </div>
       `;
     }).join('');
   }
 
-  async function getProblems() {
+  let TASKS = [];
+  let ISSUES = [];
+
+  async function getProblems(){
     try {
       getBtn.disabled = true;
       getBtn.textContent = 'Loading…';
       statusEl.style.display = 'inline';
-      statusEl.style.color = '#6b7280';
+      statusEl.style.color = '#a5b4fc';
       statusEl.textContent = 'Fetching from API…';
-      cards.innerHTML = '';
 
       const url = buildUrl();
-      const r = await fetch(url, { cache: 'no-store' });
-      if (!r.ok) {
+      const r = await fetch(url, { cache:'no-store' });
+      if (!r.ok){
         const txt = await r.text();
         throw new Error(`HTTP ${r.status}: ${txt}`);
       }
       const data = await r.json();
+      TASKS = Array.isArray(data.tasks) ? data.tasks : [];
 
-      // Pretty cards
-      const records = data.records || [];
-      renderCards(records);
+      populateFilters(TASKS);
+      ISSUES = buildIssues(TASKS);
+      const sum = summarize(ISSUES);
+      renderKPIs(sum);
+      renderList(visible(ISSUES));
 
-      statusEl.style.color = '#059669';
-      statusEl.textContent = `Done. ${records.length} records.`;
-    } catch (e) {
-      statusEl.style.color = '#e11d48';
+      statusEl.style.color = '#86efac';
+      statusEl.textContent = `Done. ${ISSUES.length} issues detected.`;
+    } catch (e){
+      statusEl.style.color = '#fca5a5';
       statusEl.textContent = `Error: ${e.message}`;
-      cards.innerHTML = '';
       console.error(e);
+      kpisEl.innerHTML = '';
+      listEl.innerHTML = `<div class="muted" style="padding:12px;">Failed to load problems.</div>`;
     } finally {
       getBtn.disabled = false;
-      getBtn.textContent = 'Get';
+      getBtn.textContent = 'Refresh';
     }
   }
 
+  filterType.addEventListener('change', () => renderList(visible(ISSUES)));
+  filterCrew.addEventListener('change', () => renderList(visible(ISSUES)));
+  filterProject.addEventListener('change', () => renderList(visible(ISSUES)));
+  searchEl.addEventListener('input', () => renderList(visible(ISSUES)));
   getBtn.addEventListener('click', getProblems);
 })();
+</script>
