@@ -1,78 +1,131 @@
-<div style="padding:16px;font-family:system-ui,Arial,sans-serif;">
-  <h3>Crew (Airtable)</h3>
-  <p>Click “Get” to fetch live data from the Crew table via the API.</p>
-
-  <div style="margin-bottom:12px;">
-    <button id="getBtn" style="padding:8px 12px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer;">Get</button>
-    <span id="status" style="margin-left:10px;color:#6b7280;display:none;"></span>
+<div class="crew-wrap">
+  <div class="crew-head glass">
+    <div>
+      <h3>Crew</h3>
+      <p>Live roster from Airtable</p>
+    </div>
+    <div class="controls">
+      <input id="search" class="input" placeholder="Search name, role, skill…" />
+      <label class="pill">
+        <span>Role</span>
+        <select id="filterRole" class="select">
+          <option value="">All</option>
+        </select>
+      </label>
+      <label class="pill">
+        <span>Availability</span>
+        <select id="filterAvail" class="select">
+          <option value="">All</option>
+          <option value="available">Available</option>
+          <option value="unavailable">Unavailable</option>
+        </select>
+      </label>
+      <button id="getBtn" class="btn">Refresh</button>
+      <span id="status" class="status" style="display:none;"></span>
+    </div>
   </div>
 
-  <div id="cards" class="crew-cards"></div>
+  <div id="kpis" class="kpis">
+    <!-- KPI tiles injected -->
+  </div>
+
+  <div class="panel glass">
+    <div class="list-head">
+      <div>Name</div>
+      <div>Role</div>
+      <div>Status</div>
+      <div>Project</div>
+      <div>Contact</div>
+      <div>Skills</div>
+    </div>
+    <div id="roster" class="roster">
+      <!-- Rows injected -->
+    </div>
+  </div>
 </div>
 
 <style>
-  .crew-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 12px;
-    margin-top: 8px;
+  .crew-wrap { font-family: system-ui, Arial, sans-serif; color:#e5e7eb; }
+  .crew-head {
+    display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap;
+    margin-bottom:14px; padding:14px 16px; border-radius:16px;
   }
-  .crew-card {
-    background: #fff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    padding: 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,.04);
+  .crew-head h3 { margin:0; font-size:1.25rem; color:#dbeafe; letter-spacing:.2px; }
+  .crew-head p { margin:2px 0 0; font-size:.9rem; color:#a5b4fc; }
+  .controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .input, .select {
+    background: rgba(255,255,255,.06); color:#e5e7eb; border:1px solid rgba(255,255,255,.18);
+    border-radius:10px; padding:8px 10px; outline:none; min-width:210px;
   }
-  .crew-card .head {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 8px;
+  .pill { display:flex; flex-direction:column; gap:6px; color:#cbd5e1; font-size:.85rem; }
+  .btn {
+    appearance:none; border:1px solid rgba(255,255,255,.22); color:#0b1021; font-weight:700;
+    background: linear-gradient(135deg, #60a5fa 0%, #8b5cf6 100%);
+    padding:8px 12px; border-radius:10px; cursor:pointer;
   }
-  .crew-card .avatar {
-    width: 40px; height: 40px; border-radius: 999px;
-    display: inline-flex; align-items: center; justify-content: center;
-    background: #eef2ff; color: #4f46e5; font-weight: 700;
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
+  .status { font-size:.9rem; color:#a5b4fc; }
+
+  .glass {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    backdrop-filter: blur(14px) saturate(120%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 14px 44px rgba(0,0,0,0.28), 0 2px 10px rgba(0,0,0,0.18);
+    position: relative;
   }
-  .crew-card .name { font-weight: 700; color: #111827; }
-  .crew-card .role { color: #6b7280; font-size: 13px; }
+  .glass::before {
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.10), transparent 30%),
+      linear-gradient(90deg, rgba(255,255,255,.05), transparent 40% 60%, rgba(255,255,255,.04));
+  }
+
+  .kpis {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap:12px; margin-bottom:14px;
+  }
+  .tile { padding:14px; border-radius:16px; position:relative; }
+  .tile h4 { margin:0 0 4px; font-size:.85rem; color:#c7d2fe; font-weight:600; }
+  .tile .value { font-size:1.6rem; font-weight:800; color:#ffffff; }
+
+  .panel { padding:14px; border-radius:16px; }
+  .list-head, .row {
+    display:grid; grid-template-columns: 1.4fr 1fr .9fr 1fr 1.4fr 1.4fr; gap:10px; align-items:center;
+  }
+  .list-head { color:#93c5fd; font-size:.85rem; border-bottom:1px solid rgba(255,255,255,.08); padding-bottom:8px; margin-bottom:6px; }
+  .row {
+    padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .name { color:#e5e7eb; font-weight:600; }
+  .muted { color:#a5b4fc; font-size:.9rem; }
   .badge {
-    display: inline-block; font-size: 12px; padding: 2px 8px;
-    border-radius: 999px; color: #fff; line-height: 1.6; white-space: nowrap;
+    display:inline-block; font-size:.75rem; padding:4px 8px; border-radius:999px; color:#fff; text-transform:capitalize;
+    border:1px solid rgba(255,255,255,.18);
   }
-  .badge.status-active { background:#059669; }
-  .badge.status-inactive { background:#6b7280; }
-  .meta {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px 12px;
-    font-size: 13px;
-    color:#374151;
-    margin: 8px 0;
-  }
-  .meta div span { color:#6b7280; }
-  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top: 4px; }
+  .status-available { background:linear-gradient(135deg, #10b981, #34d399); }
+  .status-unavailable { background:linear-gradient(135deg, #ef4444, #f97316); }
   .chip {
-    background:#f3f4f6; border:1px solid #e5e7eb; color:#374151;
-    border-radius:999px; padding:2px 8px; font-size:12px;
+    display:inline-block; padding:3px 8px; border-radius:999px; font-size:.75rem; color:#0b1021; background:#dbeafe; border:1px solid rgba(255,255,255,.22); margin:2px;
   }
-  .contact a { color:#4f46e5; text-decoration:none; }
-  .contact a:hover { text-decoration:underline; }
+  @media (max-width: 980px){
+    .list-head, .row { grid-template-columns: 1.4fr 1fr .9fr 1fr 1fr; }
+    .skills-col { display:none; }
+  }
 </style>
 
 <script>
 (function(){
-  // Optional overrides (safe): window.OPULENCE = { baseId: 'app...', crewTableId: 'tbl...' };
   const cfg = window.OPULENCE || {};
-
-  // Use local Express in Live Server; otherwise use Vercel serverless route
   const isLocalStatic = ['localhost','127.0.0.1'].includes(location.hostname);
   const baseApi = isLocalStatic ? 'http://localhost:3000/api/crew' : '/api/crew';
 
   const getBtn = document.getElementById('getBtn');
   const statusEl = document.getElementById('status');
-  const cards = document.getElementById('cards');
+  const kpisEl = document.getElementById('kpis');
+  const rosterEl = document.getElementById('roster');
+  const filterRole = document.getElementById('filterRole');
+  const filterAvail = document.getElementById('filterAvail');
+  const searchEl = document.getElementById('search');
 
   function buildUrl() {
     const u = new URL(baseApi, window.location.origin);
@@ -82,103 +135,137 @@
     return u.toString();
   }
 
+  const statusKey = (s, av) => {
+    const k = String(s||'').toLowerCase();
+    if (typeof av === 'boolean') return av ? 'available' : 'unavailable';
+    if (k.includes('avail')) return 'available';
+    if (k.includes('unavail') || k.includes('leave') || k.includes('off')) return 'unavailable';
+    return 'available';
+  };
+
+  function normalize(rec){
+    const f = rec.fields || {};
+    const name = f['Name'] || f['Full Name'] || f['Crew Member'] || f['Employee'] || f['First Name'] && f['Last Name'] ? `${f['First Name']} ${f['Last Name']}`.trim() : '';
+    const role = f['Role'] || f['Title'] || f['Position'] || '';
+    const project = f['Project'] || f['Assigned Project'] || f['Current Project'] || '';
+    const phone = f['Phone'] || f['Phone Number'] || '';
+    const email = f['Email'] || f['E-mail'] || '';
+    const availBool = typeof f['Available'] === 'boolean' ? f['Available'] : undefined;
+    const avail = statusKey(f['Status'] || f['Availability'], availBool);
+    let skills = f['Skills'] || f['Skill'] || '';
+    if (Array.isArray(skills)) skills = skills.join(', ');
+    return { id: rec.id, name, role, project, phone, email, avail, skills };
+  }
+
+  function summarize(items){
+    const total = items.length;
+    let available = 0, unavailable = 0;
+    const roles = new Map();
+    for (const c of items){
+      c.avail === 'available' ? available++ : unavailable++;
+      const r = c.role || '—';
+      roles.set(r, (roles.get(r) || 0) + 1);
+    }
+    const topRoles = [...roles.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3);
+    return { total, available, unavailable, roles: topRoles };
+  }
+
+  function renderKPIs(sum){
+    const rolesHtml = sum.roles.map(([r,n]) => `<span class="chip">${r}: ${n}</span>`).join(' ');
+    kpisEl.innerHTML = `
+      <div class="tile glass"><h4>Total Crew</h4><div class="value">${sum.total}</div></div>
+      <div class="tile glass"><h4>Available</h4><div class="value">${sum.available}</div></div>
+      <div class="tile glass"><h4>Unavailable</h4><div class="value">${sum.unavailable}</div></div>
+      <div class="tile glass"><h4>Top Roles</h4><div>${rolesHtml || '<span class="muted">—</span>'}</div></div>
+    `;
+  }
+
+  function populateFilters(items){
+    const roles = [...new Set(items.map(i => i.role).filter(Boolean))].sort();
+    const val = filterRole.value;
+    filterRole.innerHTML = `<option value="">All</option>` + roles.map(r=>`<option ${r===val?'selected':''}>${r}</option>`).join('');
+  }
+
+  function visible(items){
+    const role = filterRole.value;
+    const av = filterAvail.value;
+    const q = searchEl.value.trim().toLowerCase();
+    return items.filter(i => {
+      if (role && i.role !== role) return false;
+      if (av && i.avail !== av) return false;
+      if (q){
+        const hay = `${i.name} ${i.role} ${i.skills} ${i.project}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function renderRoster(items){
+    if (!items.length){
+      rosterEl.innerHTML = `<div class="muted" style="padding:12px;">No crew found.</div>`;
+      return;
+    }
+    rosterEl.innerHTML = items.map(c => `
+      <div class="row">
+        <div class="name">${escapeHTML(c.name || '—')}</div>
+        <div class="muted">${escapeHTML(c.role || '—')}</div>
+        <div><span class="badge ${c.avail==='available'?'status-available':'status-unavailable'}">${escapeHTML(c.avail)}</span></div>
+        <div class="muted">${escapeHTML(c.project || '—')}</div>
+        <div class="muted">
+          ${escapeHTML(c.phone || '')}${c.phone && c.email ? ' • ' : ''}${escapeHTML(c.email || '')}
+        </div>
+        <div class="skills-col">${(c.skills||'').split(',').filter(Boolean).slice(0,4).map(s=>`<span class="chip">${escapeHTML(s.trim())}</span>`).join(' ')}</div>
+      </div>
+    `).join('');
+  }
+
   function escapeHTML(s){
     return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
   }
-  function initials(name){
-    const parts = String(name||'').trim().split(/\s+/).slice(0,2);
-    return parts.map(p => p[0]?.toUpperCase() || '').join('') || 'C';
-  }
-  function statusClass(s){
-    const k = String(s||'').toLowerCase();
-    return k === 'active' ? 'status-active' : 'status-inactive';
-  }
-  function toChips(skills){
-    if (!skills) return [];
-    if (Array.isArray(skills)) return skills;
-    return String(skills).split(',').map(x => x.trim()).filter(Boolean);
-  }
 
-  function renderCards(records){
-    if (!Array.isArray(records) || records.length === 0){
-      cards.innerHTML = '<p style="color:#6b7280;text-align:center;padding:12px;">No crew found.</p>';
-      return;
-    }
+  let CREW = [];
 
-    cards.innerHTML = records.map(r => {
-      const f = r.fields || {};
-      const crewId = f['Crew ID'] || '';
-      const name = f['Name'] || '';
-      const role = f['Role'] || '';
-      const skills = toChips(f['Skills']);
-      const project = f['Current Project'] || '';
-      const status = f['Status'] || '';
-      const contact = f['Contact'] || '';
-
-      const mailLink = contact && contact.includes('@') ? `<a href="mailto:${escapeHTML(contact)}">${escapeHTML(contact)}</a>` : escapeHTML(contact);
-
-      return `
-        <div class="crew-card">
-          <div class="head">
-            <div class="avatar">${escapeHTML(initials(name))}</div>
-            <div>
-              <div class="name">${escapeHTML(name || '—')}</div>
-              <div class="role">${escapeHTML(role || '—')}</div>
-            </div>
-            <div style="margin-left:auto;">
-              <span class="badge ${statusClass(status)}">${escapeHTML(status || '—')}</span>
-            </div>
-          </div>
-
-          <div class="meta">
-            <div><span>Crew ID:</span> ${escapeHTML(crewId || '—')}</div>
-            <div><span>Project:</span> ${escapeHTML(project || '—')}</div>
-          </div>
-
-          <div class="chips">
-            ${skills.map(s => `<span class="chip">${escapeHTML(s)}</span>`).join('')}
-          </div>
-
-          <div class="contact" style="margin-top:8px;">
-            <span style="color:#6b7280;">Contact:</span> ${mailLink || '—'}
-          </div>
-        </div>
-      `;
-    }).join('');
-  }
-
-  async function getCrew() {
+  async function getCrew(){
     try {
       getBtn.disabled = true;
       getBtn.textContent = 'Loading…';
       statusEl.style.display = 'inline';
-      statusEl.style.color = '#6b7280';
+      statusEl.style.color = '#a5b4fc';
       statusEl.textContent = 'Fetching from API…';
-      cards.innerHTML = '';
 
       const url = buildUrl();
-      const r = await fetch(url, { cache: 'no-store' });
-      if (!r.ok) {
+      const r = await fetch(url, { cache:'no-store' });
+      if (!r.ok){
         const txt = await r.text();
         throw new Error(`HTTP ${r.status}: ${txt}`);
       }
       const data = await r.json();
-      const records = data.records || [];
-      renderCards(records);
+      const records = Array.isArray(data.records) ? data.records : [];
+      CREW = records.map(normalize);
 
-      statusEl.style.color = '#059669';
-      statusEl.textContent = `Done. ${records.length} crew.`;
-    } catch (e) {
-      statusEl.style.color = '#e11d48';
+      populateFilters(CREW);
+      const sum = summarize(CREW);
+      renderKPIs(sum);
+      renderRoster(visible(CREW));
+
+      statusEl.style.color = '#86efac';
+      statusEl.textContent = `Done. ${CREW.length} crew members.`;
+    } catch (e){
+      statusEl.style.color = '#fca5a5';
       statusEl.textContent = `Error: ${e.message}`;
-      cards.innerHTML = '';
       console.error(e);
+      kpisEl.innerHTML = '';
+      rosterEl.innerHTML = `<div class="muted" style="padding:12px;">Failed to load crew.</div>`;
     } finally {
       getBtn.disabled = false;
-      getBtn.textContent = 'Get';
+      getBtn.textContent = 'Refresh';
     }
   }
 
+  filterRole.addEventListener('change', () => { renderRoster(visible(CREW)); });
+  filterAvail.addEventListener('change', () => { renderRoster(visible(CREW)); });
+  searchEl.addEventListener('input', () => { renderRoster(visible(CREW)); });
   getBtn.addEventListener('click', getCrew);
 })();
 </script>
