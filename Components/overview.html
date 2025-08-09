@@ -1,318 +1,45 @@
-<div id="overview-view" class="dash dash-overview">
-  <div class="panel">
-    <div class="panel-head">
-      <h3>📊 Project Overview</h3>
-      <p>High-level snapshot of all active projects</p>
-    </div>
+<div style="padding:16px;font-family:system-ui,Arial,sans-serif;">
+  <h3>Overview (Airtable)</h3>
+  <p>Click “Get” to fetch live data from the Overview table via the API.</p>
 
-    <div id="overview-content" class="overview-content">
-      <div class="loader" style="display:block; margin:2rem auto;"></div>
-    </div>
-
-    <div id="overview-status" class="status muted" style="display:none"></div>
+  <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
+    <button id="getBtn" style="padding:8px 12px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer;">Get</button>
+    <span id="status" style="margin-left:4px;color:#6b7280;display:none;"></span>
   </div>
+
+  <div id="cards" class="overview-cards"></div>
 </div>
 
 <style>
-  #overview-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:1.25rem;box-shadow:0 8px 24px rgba(0,0,0,.08)}
-  #overview-view .panel-head{text-align:center;margin-bottom:1.5rem}
-  #overview-view .panel-head h3{color:#4f46e5;font-size:1.8rem;margin-bottom:.5rem}
-  #overview-view .panel-head p{color:#6b7280;font-size:1rem}
-  #overview-view .overview-content{min-height:400px}
-  #overview-view .kpi-grid{display:flex;gap:1rem;flex-wrap:wrap;justify-content:center;margin-bottom:1.5rem}
-  #overview-view .kpi-card{flex:1;min-width:200px;background:white;padding:1rem;border-radius:12px;text-align:center;box-shadow:0 4px 10px rgba(0,0,0,0.05)}
-  #overview-view .kpi-card h2{font-size:2rem;margin-bottom:.5rem}
-  #overview-view .kpi-card p{color:#6b7280;font-size:.9rem}
-  #overview-view .section{background:white;padding:1rem;border-radius:12px;margin-bottom:1.5rem;box-shadow:0 4px 10px rgba(0,0,0,0.05)}
-  #overview-view .section h3{margin-bottom:1rem;color:#4f46e5}
-  #overview-view .progress-bar{background:#e5e7eb;border-radius:8px;overflow:hidden;margin-bottom:.8rem}
-  #overview-view .progress-fill{height:8px;transition:width .3s ease}
-  #overview-view .issue-list{list-style:none;padding-left:0}
-  #overview-view .issue-list li{margin-bottom:.5rem;padding:.5rem;background:#f8fafc;border-radius:6px}
-  #overview-view .crew-util{display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem}
-  #overview-view .util-bar{flex:1;background:#e5e7eb;height:8px;border-radius:4px;margin:0 .5rem;overflow:hidden}
-  #overview-view .util-fill{height:100%;background:linear-gradient(90deg,#4f46e5,#14B8A6)}
-  #overview-view .milestone-table{width:100%;border-collapse:collapse}
-  #overview-view .milestone-table th{background:#f3f4f6;padding:8px;text-align:left;font-weight:600}
-  #overview-view .milestone-table td{padding:8px;border-bottom:1px solid #f3f4f6}
-  #overview-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
-  #overview-view .loader{display:inline-block;width:40px;height:40px;border:4px solid #e5e7eb;border-top-color:#4f46e5;border-radius:50%;animation:spin 1s linear infinite}
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .overview-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .proj-card {
+    background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px;
+    box-shadow:0 4px 12px rgba(0,0,0,.04);
+  }
+  .proj-head {
+    display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  }
+  .proj-title { font-weight:700; color:#111827; }
+  .badge {
+    margin-left:auto; display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; color:#fff;
+  }
+  .status-in-progress { background:#3b82f6; }
+  .status-done, .status-complete { background:#059669; }
+  .status-todo, .status-not-started { background:#6b7280; }
+  .proj-meta {
+    display:grid; grid-template-columns: 1fr 1fr; gap:6px 12px; font-size:13px; color:#374151; margin-bottom:8px;
+  }
+  .proj-meta div span { color:#6b7280; }
+  .progress {
+    background:#f3f4f6; border:1px solid #e5e7eb; border-radius:999px; height:10px; overflow:hidden; margin-top:4px;
+  }
+  .bar { height:100%; background:#4f46e5; width:0%; transition:width .3s ease; }
+  .money { color:#374151; font-size:13px; display:flex; gap:12px; margin-top:8px; }
 </style>
 
-<script>
-(function(){
-  // ---- configuration ----
-  const cfg = (window.OPULENCE || {});
-  const PROJECTS_TABLE = cfg.projectsTable || "Projects";
-  const ISSUES_TABLE = cfg.issuesTable || "Issues";
-  const MILESTONES_TABLE = cfg.milestonesTable || "Milestones";
-  const BASE = cfg.baseId;
-  const KEY = cfg.airtableApiKey;
-  const PROXY = cfg.proxyUrl;
-
-  const SLOT = document.getElementById('overview-view');
-  const content = SLOT.querySelector('#overview-content');
-  const status = SLOT.querySelector('#overview-status');
-
-  // ---- data fetch ----
-  async function fetchOverviewData() {
-    try {
-      // Prefer proxy to avoid exposing keys
-      if (PROXY) {
-        const r = await fetch(PROXY, { cache: "no-store" });
-        if (!r.ok) throw new Error("Proxy error " + r.status);
-        const data = await r.json();
-        return {
-          projects: data.projects || [],
-          issues: data.issues || [],
-          milestones: data.milestones || []
-        };
-      }
-
-      // Direct Airtable (FOR DEMO ONLY)
-      if (!BASE || !KEY) throw new Error("Missing Airtable config (use proxyUrl or set baseId + apiKey).");
-
-      const [projectsRes, issuesRes, milestonesRes] = await Promise.all([
-        fetch(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(PROJECTS_TABLE)}?pageSize=100`, {
-          headers: { Authorization: `Bearer ${KEY}` }
-        }),
-        fetch(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(ISSUES_TABLE)}?pageSize=100`, {
-          headers: { Authorization: `Bearer ${KEY}` }
-        }),
-        fetch(`https://api.airtable.com/v0/${BASE}/${encodeURIComponent(MILESTONES_TABLE)}?pageSize=100`, {
-          headers: { Authorization: `Bearer ${KEY}` }
-        })
-      ]);
-
-      if (!projectsRes.ok || !issuesRes.ok || !milestonesRes.ok) {
-        throw new Error(`Airtable error: ${projectsRes.status}, ${issuesRes.status}, ${milestonesRes.status}`);
-      }
-
-      const [projectsJson, issuesJson, milestonesJson] = await Promise.all([
-        projectsRes.json(),
-        issuesRes.json(),
-        milestonesRes.json()
-      ]);
-
-      // Map Airtable -> normalized shape
-      return {
-        projects: (projectsJson.records || []).map(rec => ({
-          id: rec.id,
-          name: rec.fields["Name"] || rec.fields["Project Name"] || "Unnamed Project",
-          progress: clamp(Number(rec.fields["Progress"] || rec.fields["Completion"] || 0), 0, 100),
-          status: rec.fields["Status"] || "Active",
-          crew: rec.fields["Crew"] || rec.fields["Assigned Crew"] || "—",
-          startDate: rec.fields["Start Date"] || null,
-          endDate: rec.fields["End Date"] || null
-        })),
-        issues: (issuesJson.records || []).map(rec => ({
-          id: rec.id,
-          title: rec.fields["Title"] || rec.fields["Issue"] || "Untitled Issue",
-          priority: rec.fields["Priority"] || rec.fields["Severity"] || "Medium",
-          status: rec.fields["Status"] || "Open",
-          project: rec.fields["Project"] || rec.fields["Project Name"] || "—",
-          crew: rec.fields["Crew"] || "—",
-          reportedDate: rec.fields["Reported Date"] || null,
-          dueDate: rec.fields["Due Date"] || null
-        })),
-        milestones: (milestonesJson.records || []).map(rec => ({
-          id: rec.id,
-          name: rec.fields["Name"] || rec.fields["Milestone"] || "Untitled Milestone",
-          project: rec.fields["Project"] || rec.fields["Project Name"] || "—",
-          crew: rec.fields["Crew"] || "—",
-          dueDate: rec.fields["Due Date"] || null,
-          status: rec.fields["Status"] || "Pending"
-        }))
-      };
-    } catch (e) {
-      console.warn(e);
-
-      // Demo-safe fallback
-      return {
-        projects: [
-          { id:"demo1", name:"Project A", progress:75, status:"Active", crew:"Crew A", startDate:"2025-08-01", endDate:"2025-09-15" },
-          { id:"demo2", name:"Project B", progress:50, status:"Active", crew:"Crew B", startDate:"2025-08-05", endDate:"2025-09-20" },
-          { id:"demo3", name:"Project C", progress:90, status:"Active", crew:"Crew C", startDate:"2025-07-20", endDate:"2025-08-25" }
-        ],
-        issues: [
-          { id:"demo1", title:"Safety harness failure", priority:"Critical", status:"Open", project:"Project 1", crew:"Crew A", reportedDate:"2025-08-01", dueDate:"2025-08-03" },
-          { id:"demo2", title:"Material shortage: Concrete", priority:"High", status:"Open", project:"Project 2", crew:"Crew B", reportedDate:"2025-08-02", dueDate:"2025-08-05" },
-          { id:"demo3", title:"Electrical inspection pending", priority:"Medium", status:"Open", project:"Project A", crew:"Crew A", reportedDate:"2025-08-03", dueDate:"2025-08-07" }
-        ],
-        milestones: [
-          { id:"demo1", name:"Framing Complete", project:"Project A", crew:"Crew A", dueDate:"2025-08-12", status:"Pending" },
-          { id:"demo2", name:"Plumbing Rough-In", project:"Project B", crew:"Crew B", dueDate:"2025-08-14", status:"Pending" },
-          { id:"demo3", name:"Roof Install", project:"Project C", crew:"Crew C", dueDate:"2025-08-18", status:"Pending" }
-        ]
-      };
-    }
-  }
-
-  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-  function formatDate(dateStr) {
-    if (!dateStr) return "—";
-    const d = new Date(dateStr);
-    if (isNaN(d)) return "—";
-    return d.toLocaleDateString([], { month:"short", day:"numeric" });
-  }
-
-  // ---- render ----
-  function render(data) {
-    const { projects, issues, milestones } = data;
-    
-    // Calculate KPIs
-    const activeProjects = projects.filter(p => p.status === "Active").length;
-    const openIssues = issues.filter(i => i.status === "Open").length;
-    const criticalIssues = issues.filter(i => i.priority === "Critical" && i.status === "Open").length;
-    const upcomingMilestones = milestones.filter(m => m.status === "Pending").length;
-    const onTimeRate = calculateOnTimeRate(projects);
-
-    // Calculate crew utilization (simplified)
-    const crewUtilization = calculateCrewUtilization(projects);
-
-    content.innerHTML = `
-      <!-- KPI Cards -->
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <h2 style="color:#4f46e5;">${activeProjects}</h2>
-          <p>Active Projects</p>
-        </div>
-        <div class="kpi-card">
-          <h2 style="color:#f43f5e;">${openIssues}</h2>
-          <p>Open Issues</p>
-        </div>
-        <div class="kpi-card">
-          <h2 style="color:#f59e0b;">${upcomingMilestones}</h2>
-          <p>Tasks Due This Week</p>
-        </div>
-        <div class="kpi-card">
-          <h2 style="color:#10b981;">${onTimeRate}%</h2>
-          <p>On-Time Rate</p>
-        </div>
-      </div>
-
-      <!-- Project Progress -->
-      <div class="section">
-        <h3>Project Progress</h3>
-        ${projects.map(p => `
-          <div style="margin-bottom:0.8rem;">
-            <p>${escapeHTML(p.name)}</p>
-            <div class="progress-bar">
-              <div class="progress-fill" style="width:${p.progress}%; background:${getProgressColor(p.progress)};"></div>
-            </div>
-          </div>
-        `).join("")}
-      </div>
-
-      <!-- Top Issues -->
-      <div class="section">
-        <h3>Top Issues</h3>
-        <ul class="issue-list">
-          ${issues.slice(0, 3).map(i => `
-            <li>${getIssueIcon(i.priority)} ${escapeHTML(i.title)}</li>
-          `).join("")}
-        </ul>
-      </div>
-
-      <!-- Crew Utilization -->
-      <div class="section">
-        <h3>Crew Utilization</h3>
-        ${Object.entries(crewUtilization).map(([crew, util]) => `
-          <div class="crew-util">
-            <span>${escapeHTML(crew)}:</span>
-            <div class="util-bar">
-              <div class="util-fill" style="width:${util}%"></div>
-            </div>
-            <span>${util}%</span>
-          </div>
-        `).join("")}
-      </div>
-
-      <!-- Upcoming Milestones -->
-      <div class="section">
-        <h3>Upcoming Milestones</h3>
-        <table class="milestone-table">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th>Milestone</th>
-              <th>Due Date</th>
-              <th>Crew</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${milestones.slice(0, 3).map(m => `
-              <tr>
-                <td>${escapeHTML(m.project)}</td>
-                <td>${escapeHTML(m.name)}</td>
-                <td>${formatDate(m.dueDate)}</td>
-                <td>${escapeHTML(m.crew)}</td>
-              </tr>
-            `).join("")}
-          </tbody>
-        </table>
-      </div>
-    `;
-
-    status.style.display = "none";
-  }
-
-  function calculateOnTimeRate(projects) {
-    if (projects.length === 0) return 0;
-    const onTime = projects.filter(p => p.progress >= 75).length;
-    return Math.round((onTime / projects.length) * 100);
-  }
-
-  function calculateCrewUtilization(projects) {
-    const crewMap = {};
-    projects.forEach(p => {
-      if (p.crew && p.crew !== "—") {
-        crewMap[p.crew] = (crewMap[p.crew] || 0) + p.progress;
-      }
-    });
-    
-    // Normalize to percentages
-    Object.keys(crewMap).forEach(crew => {
-      crewMap[crew] = Math.round(crewMap[crew] / projects.filter(p => p.crew === crew).length);
-    });
-    
-    return crewMap;
-  }
-
-  function getProgressColor(progress) {
-    if (progress >= 80) return "#10b981";
-    if (progress >= 60) return "#f59e0b";
-    return "#f43f5e";
-  }
-
-  function getIssueIcon(priority) {
-    switch(priority.toLowerCase()) {
-      case "critical": return "🚨";
-      case "high": return "⚠️";
-      case "medium": return "🔧";
-      default: return "📝";
-    }
-  }
-
-  function escapeHTML(s){
-    return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-  }
-
-  // ---- boot ----
-  async function boot(){
-    status.style.display = "block";
-    status.textContent = "Loading overview data…";
-    const data = await fetchOverviewData();
-    render(data);
-  }
-
-  // This fragment runs when injected IF the host calls window.afterDashboardLoad('overview')
-  window.afterDashboardLoad = (name) => {
-    if (name === 'overview') boot();
-  };
-
-  // If user loaded overview.html as the default view, still initialize:
-  if (SLOT && !window._overviewBooted) { window._overviewBooted = true; boot(); }
-})();
-</script>
+<script src="./overview.js"></script>
