@@ -163,20 +163,20 @@
 
       try {
         const res = await fetch(file, { cache: 'no-store' });
-        if (!res.ok) throw new Error(\`Failed to load ${file} (\${res.status})\`);
+        if (!res.ok) throw new Error(`Failed to load ${file} (${res.status})`);
         const html = await res.text();
         spaceEl.innerHTML = html;
         executeScripts(spaceEl);
 
         if (window.afterDashboardLoad) window.afterDashboardLoad(name);
         // maintain SPA deep-link format (/#/crew)
-        location.hash = \`#/\${name}\`;
+        location.hash = `#/${name}`;
       } catch (err) {
         console.error(err);
         spaceEl.innerHTML = `
           <div class="dashboard-placeholder">
             <div class="icon">⚠️</div>
-            <p>Couldn’t load <strong>${name}</strong> view.</p>
+            <p>Couldn't load <strong>${name}</strong> view.</p>
             <p style="color:#6b7280">${String(err.message || err)}</p>
           </div>
         `;
@@ -264,14 +264,14 @@
     // prefer app helper; fallback to simulated click; last resort inject into #dashboardSpace
     async function loadView(view){
       if (typeof window.loadDashboard === 'function') return window.loadDashboard(view);
-      const el = document.querySelector(\`[data-view="\${view}"]\`);
+      const el = document.querySelector(`[data-view="${view}"]`);
       if (el && typeof el.click === 'function') return el.click();
 
       const container = document.getElementById('dashboardSpace');
       if (!container) { console.warn('[voice] dashboard container not found'); return; }
-      const url = \`Components/\${view}.html\`;
+      const url = `Components/${view}.html`;
       const r = await fetch(url, { cache:'no-store' });
-      if (!r.ok) throw new Error(\`Failed to load \${url}: \${r.status}\`);
+      if (!r.ok) throw new Error(`Failed to load ${url}: ${r.status}`);
       container.innerHTML = await r.text();
     }
 
