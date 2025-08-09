@@ -1,45 +1,111 @@
-<div style="padding:16px;font-family:system-ui,Arial,sans-serif;">
-  <h3>Overview (Airtable)</h3>
-  <p>Click “Get” to fetch live data from the Overview table via the API.</p>
-
-  <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
-    <button id="getBtn" style="padding:8px 12px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer;">Get</button>
-    <span id="status" style="margin-left:4px;color:#6b7280;display:none;"></span>
+<div class="ov-wrap">
+  <div class="ov-head glass">
+    <div>
+      <h3>Overview</h3>
+      <p>Live summary of projects from Airtable</p>
+    </div>
+    <div class="controls">
+      <button id="getBtn" class="btn">Refresh</button>
+      <span id="status" class="status" style="display:none;"></span>
+    </div>
   </div>
 
-  <div id="cards" class="overview-cards"></div>
+  <div id="kpis" class="kpis">
+    <!-- KPI tiles injected here -->
+  </div>
+
+  <div id="dist" class="panel glass">
+    <!-- Status distribution injected here -->
+  </div>
+
+  <div id="list" class="panel glass">
+    <!-- Project list injected here -->
+  </div>
 </div>
 
 <style>
-  .overview-cards {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    gap: 12px;
-    margin-top: 8px;
+  .ov-wrap { font-family: system-ui, Arial, sans-serif; color:#e5e7eb; }
+  .ov-head {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:14px; padding:14px 16px; border-radius:16px;
   }
-  .proj-card {
-    background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px;
-    box-shadow:0 4px 12px rgba(0,0,0,.04);
+  .ov-head h3 { margin:0; font-size:1.25rem; color:#dbeafe; letter-spacing:.2px; }
+  .ov-head p { margin:2px 0 0; font-size:.9rem; color:#a5b4fc; }
+  .controls { display:flex; gap:8px; align-items:center; }
+
+  .glass {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    backdrop-filter: blur(14px) saturate(120%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 14px 44px rgba(0,0,0,0.28), 0 2px 10px rgba(0,0,0,0.18);
+    position: relative;
   }
-  .proj-head {
-    display:flex; align-items:center; gap:8px; margin-bottom:8px;
+  .glass::before {
+    content:""; position:absolute; inset:0; border-radius:inherit; pointer-events:none;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.10), transparent 30%),
+      linear-gradient(90deg, rgba(255,255,255,.05), transparent 40% 60%, rgba(255,255,255,.04));
   }
-  .proj-title { font-weight:700; color:#111827; }
+
+  .btn {
+    appearance:none; border:1px solid rgba(255,255,255,.22); color:#0b1021; font-weight:700;
+    background: linear-gradient(135deg, #60a5fa 0%, #8b5cf6 100%);
+    padding:8px 12px; border-radius:10px; cursor:pointer;
+  }
+  .btn:disabled{ opacity:.6; cursor:not-allowed; }
+  .status { font-size:.9rem; color:#a5b4fc; }
+
+  .kpis {
+    display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap:12px; margin-bottom:14px;
+  }
+  .tile {
+    padding:14px; border-radius:16px; position:relative;
+  }
+  .tile h4 { margin:0 0 4px; font-size:.85rem; color:#c7d2fe; font-weight:600; }
+  .tile .value { font-size:1.6rem; font-weight:800; color:#ffffff; }
+  .mini-bar {
+    height:8px; border-radius:999px; margin-top:10px; overflow:hidden;
+    background: rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16);
+  }
+  .mini-bar > span { display:block; height:100%; background: linear-gradient(90deg, #60a5fa, #8b5cf6); }
+
+  .panel { padding:14px; border-radius:16px; }
+  .panel h4 { margin:0 0 8px; color:#dbeafe; font-size:1rem; }
+
+  /* Distribution bars */
+  .dist-item { display:grid; grid-template-columns: 140px 1fr 70px; gap:10px; align-items:center; margin:8px 0; }
+  .dist-item .label { color:#cbd5e1; font-size:.92rem; }
+  .dist-item .bar { height:12px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14); }
+  .dist-item .bar > span { display:block; height:100%; background: linear-gradient(90deg, #93c5fd, #60a5fa); }
+  .dist-item.done .bar > span { background: linear-gradient(90deg, #34d399, #10b981); }
+  .dist-item.not .bar > span { background: linear-gradient(90deg, #94a3b8, #64748b); }
+  .dist-item .count { text-align:right; color:#a5b4fc; font-size:.9rem; }
+
+  /* Project list */
+  .list-head, .list-row {
+    display:grid; grid-template-columns: 2fr 1.2fr 1.2fr 1fr 120px; gap:10px; align-items:center;
+  }
+  .list-head { color:#93c5fd; font-size:.85rem; border-bottom:1px solid rgba(255,255,255,.08); padding-bottom:8px; margin-bottom:6px; }
+  .list-row {
+    padding:10px 0; border-bottom:1px solid rgba(255,255,255,.06);
+  }
+  .name { color:#e5e7eb; font-weight:600; }
+  .muted { color:#a5b4fc; font-size:.9rem; }
   .badge {
-    margin-left:auto; display:inline-block; font-size:12px; padding:2px 8px; border-radius:999px; color:#fff;
+    display:inline-block; font-size:.75rem; padding:4px 8px; border-radius:999px; color:#fff; text-transform:capitalize;
+    border:1px solid rgba(255,255,255,.18);
   }
-  .status-in-progress { background:#3b82f6; }
-  .status-done, .status-complete { background:#059669; }
-  .status-todo, .status-not-started { background:#6b7280; }
-  .proj-meta {
-    display:grid; grid-template-columns: 1fr 1fr; gap:6px 12px; font-size:13px; color:#374151; margin-bottom:8px;
-  }
-  .proj-meta div span { color:#6b7280; }
+  .status-in-progress { background:linear-gradient(135deg, #3b82f6, #60a5fa); }
+  .status-done, .status-complete { background:linear-gradient(135deg, #059669, #10b981); }
+  .status-todo, .status-not-started { background:linear-gradient(135deg, #6b7280, #94a3b8); }
   .progress {
-    background:#f3f4f6; border:1px solid #e5e7eb; border-radius:999px; height:10px; overflow:hidden; margin-top:4px;
+    height:10px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14);
   }
-  .bar { height:100%; background:#4f46e5; width:0%; transition:width .3s ease; }
-  .money { color:#374151; font-size:13px; display:flex; gap:12px; margin-top:8px; }
+  .progress .bar { height:100%; background:linear-gradient(90deg, #60a5fa, #8b5cf6); width:0%; }
+
+  /* Empty state */
+  .empty { text-align:center; color:#a5b4fc; padding:16px; }
 </style>
 
 <script>
@@ -50,7 +116,9 @@
 
   const getBtn = document.getElementById('getBtn');
   const statusEl = document.getElementById('status');
-  const cards = document.getElementById('cards');
+  const kpisEl = document.getElementById('kpis');
+  const distEl = document.getElementById('dist');
+  const listEl = document.getElementById('list');
 
   function buildUrl() {
     const u = new URL(baseApi, window.location.origin);
@@ -68,53 +136,142 @@
     const t = new Date(d);
     return isNaN(t) ? '—' : t.toLocaleDateString([], { month:'short', day:'numeric', year:'numeric' });
   }
+  function statusKey(s){ return String(s||'').toLowerCase(); }
   function statusClass(s){
-    const k = String(s||'').toLowerCase().replace(/\s+/g,'-');
+    const k = statusKey(s).replace(/\s+/g,'-');
     if (k.includes('progress')) return 'status-in-progress';
     if (k.includes('done') || k.includes('complete')) return 'status-done';
-    if (k.includes('todo') || k.includes('not-started')) return 'status-todo';
+    if (k.includes('todo') || k.includes('not-started')) return 'status-not-started';
     return 'status-in-progress';
   }
   function percent(n){
     const v = Number.isFinite(+n) ? +n : 0;
     return Math.max(0, Math.min(100, v));
   }
+  function parseMoney(v){
+    if (v == null) return 0;
+    const n = parseFloat(String(v).replace(/[^0-9.]/g,''));
+    return Number.isFinite(n) ? n : 0;
+  }
+  function fmtMoney(n){
+    try { return n.toLocaleString(undefined, { style:'currency', currency:'USD', maximumFractionDigits:0 }); }
+    catch { return '$' + Math.round(n).toLocaleString(); }
+  }
 
-  function renderCards(projects){
-    if (!Array.isArray(projects) || !projects.length){
-      cards.innerHTML = '<p style="color:#6b7280;text-align:center;padding:12px;">No projects found.</p>';
+  function summarize(projects){
+    const total = projects.length;
+    let done=0, inprog=0, not=0;
+    let sumPct = 0, sumBudget=0, sumSpent=0;
+
+    for (const p of projects){
+      const k = statusKey(p.status);
+      if (k.includes('done') || k.includes('complete')) done++;
+      else if (k.includes('progress')) inprog++;
+      else if (k.includes('not') || k.includes('todo')) not++;
+      else inprog++;
+
+      sumPct += percent(p.percentComplete);
+      sumBudget += parseMoney(p.budget);
+      sumSpent  += parseMoney(p.spent);
+    }
+    const avgPct = total ? Math.round(sumPct / total) : 0;
+    const remaining = Math.max(0, sumBudget - sumSpent);
+    return { total, done, inprog, not, avgPct, sumBudget, sumSpent, remaining };
+  }
+
+  function renderKPIs(sum){
+    kpisEl.innerHTML = `
+      <div class="tile glass">
+        <h4>Total Projects</h4>
+        <div class="value">${sum.total}</div>
+        <div class="mini-bar"><span style="width:100%"></span></div>
+      </div>
+      <div class="tile glass">
+        <h4>In Progress</h4>
+        <div class="value">${sum.inprog}</div>
+        <div class="mini-bar"><span style="width:${sum.total? Math.round(sum.inprog/sum.total*100):0}%"></span></div>
+      </div>
+      <div class="tile glass">
+        <h4>Completed</h4>
+        <div class="value">${sum.done}</div>
+        <div class="mini-bar"><span style="width:${sum.total? Math.round(sum.done/sum.total*100):0}%"></span></div>
+      </div>
+      <div class="tile glass">
+        <h4>Avg Completion</h4>
+        <div class="value">${sum.avgPct}%</div>
+        <div class="mini-bar"><span style="width:${sum.avgPct}%"></span></div>
+      </div>
+      <div class="tile glass">
+        <h4>Budget</h4>
+        <div class="value">${fmtMoney(sum.sumBudget)}</div>
+        <div class="mini-bar"><span style="width:100%"></span></div>
+      </div>
+      <div class="tile glass">
+        <h4>Spent</h4>
+        <div class="value">${fmtMoney(sum.sumSpent)}</div>
+        <div class="mini-bar"><span style="width:${sum.sumBudget? Math.min(100, Math.round(sum.sumSpent/sum.sumBudget*100)):0}%"></span></div>
+      </div>
+    `;
+  }
+
+  function renderDistribution(sum){
+    const total = Math.max(1, sum.total);
+    distEl.innerHTML = `
+      <h4>Status</h4>
+      <div class="dist-item inprog">
+        <div class="label">In Progress</div>
+        <div class="bar"><span style="width:${Math.round(sum.inprog/total*100)}%"></span></div>
+        <div class="count">${sum.inprog}</div>
+      </div>
+      <div class="dist-item done">
+        <div class="label">Done</div>
+        <div class="bar"><span style="width:${Math.round(sum.done/total*100)}%"></span></div>
+        <div class="count">${sum.done}</div>
+      </div>
+      <div class="dist-item not">
+        <div class="label">Not Started</div>
+        <div class="bar"><span style="width:${Math.round(sum.not/total*100)}%"></span></div>
+        <div class="count">${sum.not}</div>
+      </div>
+    `;
+  }
+
+  function renderList(projects){
+    if (!projects.length){
+      listEl.innerHTML = `<div class="empty">No projects found.</div>`;
       return;
     }
-    cards.innerHTML = projects.map(p => {
+    const head = `
+      <h4>Projects</h4>
+      <div class="list-head">
+        <div>Project</div>
+        <div>Client</div>
+        <div>Dates</div>
+        <div>Status</div>
+        <div style="text-align:right;">Percent</div>
+      </div>
+    `;
+    const rows = projects.map(p => {
       const pct = percent(p.percentComplete);
+      const dates = `${escapeHTML(fmtDate(p.startDate))} — ${escapeHTML(fmtDate(p.endDate))}`;
       return `
-        <div class="proj-card">
-          <div class="proj-head">
-            <div>
-              <div class="proj-title">${escapeHTML(p.name || '—')}</div>
-              <div style="color:#6b7280;font-size:12px;">${escapeHTML(p.projectId || '')}</div>
+        <div class="list-row">
+          <div>
+            <div class="name">${escapeHTML(p.name || '—')}</div>
+            <div class="muted" style="font-size:.8rem;">${escapeHTML(p.projectId || '')}</div>
+          </div>
+          <div class="muted">${escapeHTML(p.client || '—')}</div>
+          <div class="muted">${dates}</div>
+          <div><span class="badge ${statusClass(p.status)}">${escapeHTML(p.status || '—')}</span></div>
+          <div>
+            <div class="progress" title="${pct}%">
+              <div class="bar" style="width:${pct}%"></div>
             </div>
-            <span class="badge ${statusClass(p.status)}">${escapeHTML(p.status || '—')}</span>
-          </div>
-
-          <div class="proj-meta">
-            <div><span>Client:</span> ${escapeHTML(p.client || '—')}</div>
-            <div><span>Percent:</span> ${pct}%</div>
-            <div><span>Start:</span> ${escapeHTML(fmtDate(p.startDate))}</div>
-            <div><span>End:</span> ${escapeHTML(fmtDate(p.endDate))}</div>
-          </div>
-
-          <div class="progress" aria-label="Percent Complete" title="${pct}% complete">
-            <div class="bar" style="width:${pct}%"></div>
-          </div>
-
-          <div class="money">
-            <div><span style="color:#6b7280;">Budget:</span> ${escapeHTML(p.budget || '—')}</div>
-            <div><span style="color:#6b7280;">Spent:</span> ${escapeHTML(p.spent || '—')}</div>
           </div>
         </div>
       `;
     }).join('');
+    listEl.innerHTML = head + rows;
   }
 
   async function getOverview() {
@@ -122,9 +279,9 @@
       getBtn.disabled = true;
       getBtn.textContent = 'Loading…';
       statusEl.style.display = 'inline';
-      statusEl.style.color = '#6b7280';
+      statusEl.style.color = '#a5b4fc';
       statusEl.textContent = 'Fetching from API…';
-      cards.innerHTML = '';
+      kpisEl.innerHTML = ''; distEl.innerHTML = ''; listEl.innerHTML = '';
 
       const url = buildUrl();
       const r = await fetch(url, { cache: 'no-store' });
@@ -133,20 +290,23 @@
         throw new Error(`HTTP ${r.status}: ${txt}`);
       }
       const data = await r.json();
-      const projects = data.projects || [];
+      const projects = Array.isArray(data.projects) ? data.projects : [];
 
-      renderCards(projects);
+      const sum = summarize(projects);
+      renderKPIs(sum);
+      renderDistribution(sum);
+      renderList(projects);
 
-      statusEl.style.color = '#059669';
+      statusEl.style.color = '#86efac';
       statusEl.textContent = `Done. ${projects.length} projects.`;
     } catch (e) {
-      statusEl.style.color = '#e11d48';
+      statusEl.style.color = '#fca5a5';
       statusEl.textContent = `Error: ${e.message}`;
       console.error(e);
-      cards.innerHTML = '';
+      listEl.innerHTML = `<div class="empty">Failed to load overview.</div>`;
     } finally {
       getBtn.disabled = false;
-      getBtn.textContent = 'Get';
+      getBtn.textContent = 'Refresh';
     }
   }
 
