@@ -182,3 +182,24 @@
   getBtn.addEventListener('click', getCrew);
 })();
 </script>
+
+<script>
+  let lastUpdate = 0;
+
+  async function checkViewChange() {
+    try {
+      const res = await fetch('/api/voice-intent?since=' + lastUpdate);
+      const data = await res.json();
+
+      if (data.changed) {
+        lastUpdate = data.updatedAt;
+        console.log("Switching to:", data.view);
+        window.location.href = data.view + '.html';
+      }
+    } catch (err) {
+      console.error('Error checking view change:', err);
+    }
+  }
+
+  setInterval(checkViewChange, 2000);
+</script>
