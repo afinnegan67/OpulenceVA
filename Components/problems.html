@@ -115,7 +115,13 @@
 (function(){
   const cfg = window.OPULENCE || {};
   const isLocalStatic = ['localhost','127.0.0.1'].includes(location.hostname);
-  const baseApi = isLocalStatic ? 'http://localhost:3000/api/schedule' : '/api/schedule';
+
+  // Try problems endpoints first; fall back to schedule if missing
+  const CANDIDATE_APIS = [
+    cfg.problemsApi || (isLocalStatic ? 'http://localhost:3000/api/problems' : '/api/problems'),
+    isLocalStatic ? 'http://localhost:3000/api/issues'   : '/api/issues',
+    isLocalStatic ? 'http://localhost:3000/api/schedule' : '/api/schedule'
+  ];
 
   const getBtn = document.getElementById('getBtn');
   const statusEl = document.getElementById('status');
@@ -125,14 +131,6 @@
   const filterCrew = document.getElementById('filterCrew');
   const filterProject = document.getElementById('filterProject');
   const searchEl = document.getElementById('search');
-
-  function buildUrl() {
-    const u = new URL(baseApi, window.location.origin);
-    if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
-    if (cfg.scheduleTableId) u.searchParams.set('scheduleTableId', cfg.scheduleTableId);
-    if (cfg.scheduleTableName) u.searchParams.set('scheduleTableName', cfg.scheduleTableName);
-    return u.toString();
-  }
 
   const clamp = (n,min,max)=>Math.max(min,Math.min(max,n));
   function parseDate(value){
@@ -159,36 +157,72 @@
   const fmtDate = d => { if (!d) return '—'; const t=new Date(d); return isNaN(t)?'—':t.toLocaleDateString([], {month:'short', day:'numeric'}); };
   const escapeHTML = s => String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
 
-  // NEW: normalize heterogeneous Airtable fields to a common shape
+  // Compute issues from schedule tasks (fallback)
   function normalizeTasks(tasks){
     return tasks.map(t => {
-      // names
       const name = t.name || t.task || t.Task || t.Title || t.taskName || t['Task Name'] || t.id || t.taskId || '—';
       const project = t.project || t.Project || t['Project Name'] || '';
-      // crew can be array, comma string, or single value
       let crew = t.crew ?? t.Crew ?? t['Assigned Crew'] ?? t['Crew Member'] ?? '';
       if (Array.isArray(crew)) crew = crew.join(', ');
       crew = String(crew || '').trim();
-      // dates can live under many keys
       const startDate = t.startDate || t.start || t['Start'] || t['Start Date'] || t['StartDate'] || '';
       const endDate   = t.endDate   || t.end   || t['End']   || t['End Date']   || t['EndDate']   || '';
-      // percent
       let percentComplete = t.percentComplete ?? t['Percent Complete'] ?? t['% Complete'] ?? t.percent ?? t['Percent'] ?? 0;
       percentComplete = parsePercent(percentComplete);
       return { ...t, name, project, crew, startDate, endDate, percentComplete };
     });
   }
 
-  function buildIssues(tasks){
+  // Normalize Airtable Problems table records
+  function normalizeProblemsRecords(records){
+    return records.map(rec => {
+      const f = rec.fields || {};
+      const id = rec.id || f['Problem ID'] || f['ID'] || '';
+      const problemId = f['Problem ID'] || '';
+      const rawType = f['Type'] || 'Issue';
+      const type = sanitizeType(rawType); // for CSS class
+      const description = f['Description'] || '';
+      const project = f['Project'] || '';
+      const reported = f['Reported Date'] || f['Reported'] || f['Date'] || '';
+      const status = f['Status'] || '';
+      const severity = f['Severity'] || '';
+      const assigned = f['Assigned to'] || f['Assigned'] || '';
+
+      // adapt to list UI shape; reuse task envelope used elsewhere
+      const task = {
+        id, name: problemId || rawType, project,
+        crew: Array.isArray(assigned) ? assigned.join(', ') : String(assigned || ''),
+        startDate: reported, endDate: reported
+      };
+
+      return {
+        source: 'problems',
+        type, rawType, status, severity, task,
+        detail: description
+      };
+    });
+  }
+
+  function sanitizeType(s){
+    return String(s||'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'issue';
+  }
+
+  // Pretty gradient for any type string
+  function typeGradient(typeStr){
+    const s = String(typeStr||'issue');
+    let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) % 360;
+    const h2 = (h + 30) % 360;
+    return `linear-gradient(135deg, hsl(${h} 85% 60%), hsl(${h2} 80% 65%))`;
+  }
+
+  function buildIssuesFromTasks(tasks){
     const issues = [];
     const today = new Date(); today.setHours(0,0,0,0);
 
-    // Index tasks by each crew member for conflict detection
     const byCrew = new Map();
     for (const t of tasks){
       const crewTokens = String(t.crew||'').split(',').map(s=>s.trim()).filter(Boolean);
       if (!crewTokens.length) {
-        // still index under empty to keep other checks
         if (!byCrew.has('')) byCrew.set('', []);
         byCrew.get('').push(t);
       } else {
@@ -199,13 +233,10 @@
       }
     }
 
-    // Generic issues
     for (const t of tasks){
       const s = parseDate(t.startDate);
       const e = parseDate(t.endDate);
       const pct = parsePercent(t.percentComplete);
-
-      // invalid dates: missing start OR end provided but invalid
       if (!s || (t.endDate != null && t.endDate !== '' && !e)) {
         issues.push({ type:'invalid-dates', task:t, detail:'Missing or invalid date(s)' });
       }
@@ -220,9 +251,8 @@
       }
     }
 
-    // Conflicts: overlapping tasks per crew member
     for (const [crew, list] of byCrew.entries()){
-      if (!crew) continue; // skip missing crew here
+      if (!crew) continue;
       const arr = list.map(t => ({ t, s:parseDate(t.startDate), e:parseDate(t.endDate)||parseDate(t.startDate) }))
                       .filter(x => x.s);
       arr.sort((a,b) => a.s - b.s);
@@ -242,13 +272,43 @@
   }
 
   function summarize(issues){
-    const total = issues.length;
-    const counts = { conflict:0, overdue:0, 'missing-crew':0, 'invalid-dates':0, 'end-before-start':0 };
-    for (const i of issues){ if (counts[i.type] != null) counts[i.type]++; }
-    return { total, counts };
+    // If issues came from Problems table, they have status/severity/rawType
+    const isProblems = issues.some(i => i.source === 'problems');
+    if (isProblems){
+      const total = issues.length;
+      const statusCounts = new Map();
+      const severityCounts = new Map();
+      for (const i of issues){
+        statusCounts.set(i.status || 'Unknown', (statusCounts.get(i.status || 'Unknown')||0)+1);
+        severityCounts.set(i.severity || 'Unknown', (severityCounts.get(i.severity || 'Unknown')||0)+1);
+      }
+      return { total, statusCounts, severityCounts };
+    } else {
+      const total = issues.length;
+      const counts = { conflict:0, overdue:0, 'missing-crew':0, 'invalid-dates':0, 'end-before-start':0 };
+      for (const i of issues){ if (counts[i.type] != null) counts[i.type]++; }
+      return { total, counts };
+    }
   }
 
   function renderKPIs(sum){
+    // Problems table KPIs
+    if (sum.statusCounts){
+      const open = sum.statusCounts.get('Open') || 0;
+      const inprog = sum.statusCounts.get('In Progress') || 0;
+      const resolved = sum.statusCounts.get('Resolved') || 0;
+      const high = (sum.severityCounts.get('High') || 0);
+
+      kpisEl.innerHTML = `
+        <div class="tile glass"><h4>Total Issues</h4><div class="value">${sum.total}</div></div>
+        <div class="tile glass"><h4>Open</h4><div class="value">${open}</div></div>
+        <div class="tile glass"><h4>In Progress</h4><div class="value">${inprog}</div></div>
+        <div class="tile glass"><h4>Resolved</h4><div class="value">${resolved}</div></div>
+        <div class="tile glass"><h4>High Severity</h4><div class="value">${high}</div></div>
+      `;
+      return;
+    }
+    // Fallback schedule-derived KPIs
     kpisEl.innerHTML = `
       <div class="tile glass"><h4>Total Issues</h4><div class="value">${sum.total}</div></div>
       <div class="tile glass"><h4>Conflicts</h4><div class="value">${sum.counts.conflict}</div></div>
@@ -258,30 +318,53 @@
     `;
   }
 
-  function populateFilters(tasks){
-    // Use normalized tasks; support multi-crew tokens
+  function populateFiltersFromProblems(issues){
+    // dynamic Type/Crew/Project options for Problems data
+    const types = new Set(), crews = new Set(), projs = new Set();
+    for (const i of issues){
+      if (i.rawType) types.add(String(i.rawType));
+      String(i.task?.crew||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(c => crews.add(c));
+      if (i.task?.project) projs.add(String(i.task.project));
+    }
+    const tVal = filterType.value, cVal = filterCrew.value, pVal = filterProject.value;
+    filterType.innerHTML = `<option value="">All</option>` + [...types].sort().map(t=>`<option ${t===tVal?'selected':''}>${escapeHTML(t)}</option>`).join('');
+    filterCrew.innerHTML  = `<option value="">All</option>` + [...crews].sort().map(c=>`<option ${c===cVal?'selected':''}>${escapeHTML(c)}</option>`).join('');
+    filterProject.innerHTML = `<option value="">All</option>` + [...projs].sort().map(p=>`<option ${p===pVal?'selected':''}>${escapeHTML(p)}</option>`).join('');
+  }
+
+  function populateFiltersFromTasks(tasks){
     const crews = new Set(), projs = new Set();
     for (const t of tasks){
       String(t.crew||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(c => crews.add(c));
       if (t.project) projs.add(String(t.project));
     }
-    const crewVal = filterCrew.value, projVal = filterProject.value;
-    filterCrew.innerHTML = `<option value="">All</option>` + [...crews].sort().map(c=>`<option ${c===crewVal?'selected':''}>${escapeHTML(c)}</option>`).join('');
-    filterProject.innerHTML = `<option value="">All</option>` + [...projs].sort().map(p=>`<option ${p===projVal?'selected':''}>${escapeHTML(p)}</option>`).join('');
+    const cVal = filterCrew.value, pVal = filterProject.value;
+    // Keep Type list as-is for schedule-derived issues (conflict/overdue/etc)
+    filterCrew.innerHTML  = `<option value="">All</option>` + [...crews].sort().map(c=>`<option ${c===cVal?'selected':''}>${escapeHTML(c)}</option>`).join('');
+    filterProject.innerHTML = `<option value="">All</option>` + [...projs].sort().map(p=>`<option ${p===pVal?'selected':''}>${escapeHTML(p)}</option>`).join('');
   }
 
   function visible(issues){
-    const type = filterType.value;
-    const crew = filterCrew.value;
-    const proj = filterProject.value;
+    const typeSel = filterType.value;
+    const crewSel = filterCrew.value;
+    const projSel = filterProject.value;
     const q = searchEl.value.trim().toLowerCase();
+
     return issues.filter(i => {
       const t = i.task || {};
-      if (type && i.type !== type) return false;
-      if (crew && String(t.crew||'') !== crew) return false;
-      if (proj && String(t.project||'') !== proj) return false;
+      // Match by Problems rawType if present, otherwise by computed type
+      if (typeSel) {
+        const typeMatch = i.rawType ? (i.rawType === typeSel) : (i.type === sanitizeType(typeSel));
+        if (!typeMatch) return false;
+      }
+      if (crewSel) {
+        const crewTokens = String(t.crew||'').split(',').map(s=>s.trim());
+        if (!crewTokens.includes(crewSel)) return false;
+      }
+      if (projSel && String(t.project||'') !== projSel) return false;
+
       if (q){
-        const hay = `${t.name||''} ${t.project||''} ${t.crew||''} ${i.detail||''}`.toLowerCase();
+        const hay = `${i.rawType||i.type||''} ${t.name||''} ${t.project||''} ${t.crew||''} ${i.detail||''} ${i.status||''} ${i.severity||''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -296,23 +379,24 @@
     listEl.innerHTML = issues.map(i => {
       const t = i.task || {};
       const dates = `${fmtDate(t.startDate)} — ${fmtDate(t.endDate)}`;
-      const badgeClass = `type-${i.type}`;
-      const typeLabel = i.type.replace(/-/g,' ');
+      const typeLabel = i.rawType || i.type.replace(/-/g,' ');
+      const badgeStyle = `style="background:${typeGradient(typeLabel)}"`;
+      const meta = (i.status || i.severity) ? ` • ${escapeHTML(i.status||'')} ${i.severity?('• '+escapeHTML(i.severity)) : ''}` : '';
       return `
         <div class="row">
-          <div><span class="badge ${badgeClass}">${escapeHTML(typeLabel)}</span></div>
-          <div class="muted">${escapeHTML(t.name || t.taskId || t.id || '—')}</div>
+          <div><span class="badge" ${badgeStyle}>${escapeHTML(typeLabel)}</span></div>
+          <div class="muted">${escapeHTML(t.name || '—')}</div>
           <div class="muted">${escapeHTML(t.project || '—')}</div>
           <div class="muted">${escapeHTML(t.crew || '—')}</div>
           <div class="muted">${dates}</div>
-          <div class="muted">${escapeHTML(i.detail || '—')}</div>
+          <div class="muted">${escapeHTML(i.detail || '—')}${meta}</div>
         </div>
       `;
     }).join('');
   }
 
-  let TASKS = [];
   let ISSUES = [];
+  let SOURCE = 'problems'; // 'problems' or 'schedule'
 
   async function getProblems(){
     try {
@@ -322,24 +406,72 @@
       statusEl.style.color = '#a5b4fc';
       statusEl.textContent = 'Fetching from API…';
 
-      const url = buildUrl();
-      const r = await fetch(url, { cache:'no-store' });
-      if (!r.ok){
-        const txt = await r.text();
-        throw new Error(`HTTP ${r.status}: ${txt}`);
-      }
-      const data = await r.json();
-      const raw = Array.isArray(data.tasks) ? data.tasks : [];
-      TASKS = normalizeTasks(raw); // normalize before analysis
+      let data = null, usedApi = null, lastErr = null;
 
-      populateFilters(TASKS);
-      ISSUES = buildIssues(TASKS);
+      for (const api of CANDIDATE_APIS){
+        try {
+          const u = new URL(api, window.location.origin);
+          if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
+          if (cfg.problemsTableId) u.searchParams.set('problemsTableId', cfg.problemsTableId);
+          if (cfg.problemsTableName) u.searchParams.set('problemsTableName', cfg.problemsTableName);
+          if (cfg.scheduleTableId) u.searchParams.set('scheduleTableId', cfg.scheduleTableId);
+          if (cfg.scheduleTableName) u.searchParams.set('scheduleTableName', cfg.scheduleTableName);
+
+          const r = await fetch(u.toString(), { cache:'no-store' });
+          if (!r.ok) { lastErr = `${r.status} ${await r.text()}`; continue; }
+          data = await r.json();
+          usedApi = api;
+          break;
+        } catch (e) {
+          lastErr = e.message;
+        }
+      }
+
+      if (!data) throw new Error(`No problems API responded (${lastErr||'unknown error'})`);
+
+      // Detect shape
+      if (Array.isArray(data.records)) {
+        // Airtable Problems table
+        const records = data.records;
+        ISSUES = normalizeProblemsRecords(records);
+        SOURCE = 'problems';
+        populateFiltersFromProblems(ISSUES);
+      } else if (Array.isArray(data.problems)) {
+        // Custom problems API returning array of issue-like objects; map minimally
+        ISSUES = (data.problems||[]).map(i => ({
+          source:'problems',
+          type: sanitizeType(i.type || 'issue'),
+          rawType: i.type || 'Issue',
+          status: i.status || '',
+          severity: i.severity || '',
+          detail: i.description || i.detail || '',
+          task: {
+            id: i.id || '',
+            name: i.id || i.type || 'Issue',
+            project: i.project || '',
+            crew: Array.isArray(i.assigned) ? i.assigned.join(', ') : (i.assigned || ''),
+            startDate: i.reportedDate || i.date || '',
+            endDate:   i.reportedDate || i.date || ''
+          }
+        }));
+        SOURCE = 'problems';
+        populateFiltersFromProblems(ISSUES);
+      } else if (Array.isArray(data.tasks)) {
+        // Schedule fallback: compute issues
+        const tasks = normalizeTasks(data.tasks);
+        ISSUES = buildIssuesFromTasks(tasks);
+        SOURCE = 'schedule';
+        populateFiltersFromTasks(tasks);
+      } else {
+        throw new Error('Unknown API response shape');
+      }
+
       const sum = summarize(ISSUES);
       renderKPIs(sum);
       renderList(visible(ISSUES));
 
       statusEl.style.color = '#86efac';
-      statusEl.textContent = `Done. ${ISSUES.length} issues detected.`;
+      statusEl.textContent = `Done. ${ISSUES.length} issues loaded (${SOURCE}).`;
     } catch (e){
       statusEl.style.color = '#fca5a5';
       statusEl.textContent = `Error: ${e.message}`;
