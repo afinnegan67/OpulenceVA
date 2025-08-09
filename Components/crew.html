@@ -1,176 +1,184 @@
-<div id="crew-view" class="dash dash-crew">
-  <div class="panel">
-    <div class="panel-head">
-      <h3>Crew Utilization & Availability</h3>
-             <div class="controls">
-                  <input id="crew-search" placeholder="Search crew, role, project, skills…" />
-         <select id="crew-sort">
-           <option value="name-asc">Name A→Z</option>
-           <option value="name-desc">Name Z→A</option>
-           <option value="role-asc">Role A→Z</option>
-           <option value="project-asc">Project A→Z</option>
-         </select>
-       </div>
-    </div>
+<div style="padding:16px;font-family:system-ui,Arial,sans-serif;">
+  <h3>Crew (Airtable)</h3>
+  <p>Click “Get” to fetch live data from the Crew table via the API.</p>
 
-    <div id="crew-grid" class="crew-grid"></div>
-
-    <div id="crew-status" class="status muted" style="display:none"></div>
+  <div style="margin-bottom:12px;">
+    <button id="getBtn" style="padding:8px 12px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer;">Get</button>
+    <span id="status" style="margin-left:10px;color:#6b7280;display:none;"></span>
   </div>
+
+  <div id="cards" class="crew-cards"></div>
 </div>
 
 <style>
-     #crew-view .panel{background:rgba(255,255,255,.95);border-radius:16px;padding:2rem;box-shadow:0 8px 24px rgba(0,0,0,.08);min-height:600px;display:flex;flex-direction:column}
-   #crew-view .panel-head{display:flex;flex-wrap:wrap;gap:.75rem;align-items:center;justify-content:space-between;margin-bottom:1.5rem}
-  #crew-view .controls{display:flex;gap:.5rem;align-items:center}
-  #crew-view input, #crew-view select{
-    border:1px solid rgba(0,0,0,.1);border-radius:10px;padding:.5rem .7rem;background:#fff;min-width:220px
+  .crew-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
   }
-     #crew-view .crew-grid{display:grid;gap:1.5rem;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));margin-top:1rem;flex:1;align-content:start}
-   #crew-view .crew-card{background:rgba(255,255,255,.9);border-radius:14px;padding:1.5rem;border:1px solid rgba(0,0,0,.06);min-height:180px;display:flex;flex-direction:column;justify-content:space-between}
-  #crew-view .top{display:flex;gap:.75rem;align-items:center;margin-bottom:.75rem}
-  #crew-view .avatar{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:#4f46e5;color:#fff;font-weight:700}
-  #crew-view .name{font-weight:700}
-  #crew-view .meta{color:#6b7280;font-size:.9rem}
-  #crew-view .meta2{color:#374151;font-size:.9rem;margin-top:.5rem}
-  #crew-view .meter{background:#e5e7eb;height:12px;border-radius:999px;overflow:hidden;position:relative}
-  #crew-view .meter span{display:block;height:100%;background:linear-gradient(90deg,#4f46e5,#14B8A6)}
-     #crew-view .badgelist{display:flex;flex-wrap:wrap;gap:.35rem;margin-top:.75rem}
-   #crew-view .badge{font-size:.75rem;border:1px solid #e5e7eb;border-radius:999px;padding:.25rem .6rem;background:#f8fafc;color:#334155;font-weight:500}
-  #crew-view .btn.ghost{background:transparent;border:1px solid rgba(79,70,229,.4);color:#4f46e5;padding:.5rem .8rem;border-radius:10px;cursor:pointer}
-  #crew-view .btn.ghost:hover{background:rgba(79,70,229,.06)}
-  #crew-view .status.muted{color:#6b7280;text-align:center;margin-top:1rem}
+  .crew-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.04);
+  }
+  .crew-card .head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+  .crew-card .avatar {
+    width: 40px; height: 40px; border-radius: 999px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: #eef2ff; color: #4f46e5; font-weight: 700;
+  }
+  .crew-card .name { font-weight: 700; color: #111827; }
+  .crew-card .role { color: #6b7280; font-size: 13px; }
+  .badge {
+    display: inline-block; font-size: 12px; padding: 2px 8px;
+    border-radius: 999px; color: #fff; line-height: 1.6; white-space: nowrap;
+  }
+  .badge.status-active { background:#059669; }
+  .badge.status-inactive { background:#6b7280; }
+  .meta {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    font-size: 13px;
+    color:#374151;
+    margin: 8px 0;
+  }
+  .meta div span { color:#6b7280; }
+  .chips { display:flex; flex-wrap:wrap; gap:6px; margin-top: 4px; }
+  .chip {
+    background:#f3f4f6; border:1px solid #e5e7eb; color:#374151;
+    border-radius:999px; padding:2px 8px; font-size:12px;
+  }
+  .contact a { color:#4f46e5; text-decoration:none; }
+  .contact a:hover { text-decoration:underline; }
 </style>
 
 <script>
 (function(){
-     // ---- configuration ----
-   const cfg = (window.OPULENCE || {});
-   const PROXY_URL = "/api/crew"; // Use the proxy endpoint // recommended
+  // Optional overrides (safe): window.OPULENCE = { baseId: 'app...', crewTableId: 'tbl...' };
+  const cfg = window.OPULENCE || {};
 
-  const SLOT = document.getElementById('crew-view');
-  const grid = SLOT.querySelector('#crew-grid');
-  const status = SLOT.querySelector('#crew-status');
-  const searchEl = SLOT.querySelector('#crew-search');
-  const sortEl = SLOT.querySelector('#crew-sort');
+  // Use local Express in Live Server; otherwise use Vercel serverless route
+  const isLocalStatic = ['localhost','127.0.0.1'].includes(location.hostname);
+  const baseApi = isLocalStatic ? 'http://localhost:3000/api/crew' : '/api/crew';
 
-  // ---- data fetch ----
-  async function fetchCrew() {
-    try {
-      console.log('Fetching crew data from proxy:', PROXY_URL);
-      
-      const response = await fetch(PROXY_URL, { 
-        cache: "no-store",
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Proxy error:', response.status, errorText);
-        throw new Error(`Proxy error ${response.status}: ${errorText}`);
-      }
-      
-      const data = await response.json();
-      console.log('✅ Successfully fetched crew data from proxy:', data);
-      
-      return data.crews || [];
-    } catch (e) {
-      console.warn(e);
+  const getBtn = document.getElementById('getBtn');
+  const statusEl = document.getElementById('status');
+  const cards = document.getElementById('cards');
 
-      // Demo-safe fallback so your UI still shows during Loom
-      return [
-        { id:"demo1", name:"Crew A", role:"Framing", members:4, utilization:85, nextFreeISO:addHours(50), tags:["Lead+Apprentice","Truck #2"] },
-        { id:"demo2", name:"Crew B", role:"Electrical", members:3, utilization:70, nextFreeISO:addHours(18), tags:["Licensed","PPE"] },
-        { id:"demo3", name:"Crew C", role:"Finish", members:5, utilization:92, nextFreeISO:addHours(72), tags:["Punch List"] },
-        { id:"demo4", name:"Crew D", role:"Plumbing", members:2, utilization:40, nextFreeISO:addHours(6), tags:["Emergency"] },
-      ];
-    }
-  }
-
-  function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-  function addHours(h){ return new Date(Date.now()+h*3600e3).toISOString(); }
-  function fmtNextFree(iso){
-    if (!iso) return "—";
-    const d = new Date(iso);
-    if (isNaN(d)) return "—";
-    return d.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
-  }
-
-  // ---- render ----
-  function render(crews){
-         // filter
-     const q = (searchEl.value || "").trim().toLowerCase();
-     let rows = !q ? crews : crews.filter(c =>
-       (c.name||"").toLowerCase().includes(q) ||
-       (c.role||"").toLowerCase().includes(q) ||
-       (c.project||"").toLowerCase().includes(q) ||
-       (c.status||"").toLowerCase().includes(q) ||
-       (c.tags||[]).some(tag => tag.toLowerCase().includes(q))
-     );
-
-         // sort
-     const sort = sortEl.value;
-     rows.sort((a,b)=>{
-       if (sort==="name-asc") return (a.name.localeCompare(b.name));
-       if (sort==="name-desc") return (b.name.localeCompare(a.name));
-       if (sort==="role-asc") return (a.role.localeCompare(b.role));
-       if (sort==="project-asc") return (a.project.localeCompare(b.project));
-       return 0;
-     });
-
-                   // paint
-      grid.innerHTML = rows.map(c => {
-        const initials = (c.name.match(/\b\w/g)||[]).slice(0,2).join('').toUpperCase();
-               return `
-          <div class="crew-card">
-            <div class="top">
-              <div class="avatar">${initials||"?"}</div>
-              <div>
-                <div class="name">${escapeHTML(c.name)}</div>
-                <div class="meta">${escapeHTML(c.role)} • ${escapeHTML(c.status)}</div>
-              </div>
-            </div>
-            <div class="meta2">
-              <div><strong>Project:</strong> ${escapeHTML(c.project)}</div>
-              <div><strong>Contact:</strong> ${escapeHTML(c.contact)}</div>
-            </div>
-            ${Array.isArray(c.tags) && c.tags.length ? `
-              <div class="badgelist">
-                ${c.tags.map(t=>`<span class="badge">${escapeHTML(String(t))}</span>`).join("")}
-              </div>` : ``}
-          </div>
-        `;
-     }).join("");
-
-    status.style.display = rows.length ? "none" : "block";
-    status.textContent = "No crews match your filters.";
+  function buildUrl() {
+    const u = new URL(baseApi, window.location.origin);
+    if (cfg.baseId) u.searchParams.set('baseId', cfg.baseId);
+    if (cfg.crewTableId) u.searchParams.set('crewTableId', cfg.crewTableId);
+    if (cfg.crewTableName) u.searchParams.set('crewTableName', cfg.crewTableName);
+    return u.toString();
   }
 
   function escapeHTML(s){
     return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
   }
-
-  // ---- boot ----
-  let CREWS = [];
-  async function boot(){
-    status.style.display = "block";
-    status.textContent = "Loading crew…";
-    CREWS = await fetchCrew();
-    status.style.display = "none";
-    render(CREWS);
+  function initials(name){
+    const parts = String(name||'').trim().split(/\s+/).slice(0,2);
+    return parts.map(p => p[0]?.toUpperCase() || '').join('') || 'C';
+  }
+  function statusClass(s){
+    const k = String(s||'').toLowerCase();
+    return k === 'active' ? 'status-active' : 'status-inactive';
+  }
+  function toChips(skills){
+    if (!skills) return [];
+    if (Array.isArray(skills)) return skills;
+    return String(skills).split(',').map(x => x.trim()).filter(Boolean);
   }
 
-  searchEl.addEventListener('input', ()=>render(CREWS));
-  sortEl.addEventListener('change', ()=>render(CREWS));
+  function renderCards(records){
+    if (!Array.isArray(records) || records.length === 0){
+      cards.innerHTML = '<p style="color:#6b7280;text-align:center;padding:12px;">No crew found.</p>';
+      return;
+    }
 
-  // This fragment runs when injected IF the host calls window.afterDashboardLoad('crew')
-  window.afterDashboardLoad = (name) => {
-    if (name === 'crew') boot();
-  };
+    cards.innerHTML = records.map(r => {
+      const f = r.fields || {};
+      const crewId = f['Crew ID'] || '';
+      const name = f['Name'] || '';
+      const role = f['Role'] || '';
+      const skills = toChips(f['Skills']);
+      const project = f['Current Project'] || '';
+      const status = f['Status'] || '';
+      const contact = f['Contact'] || '';
 
-  // If user loaded crew.html as the default view, still initialize:
-  if (SLOT && !window._crewBooted) { window._crewBooted = true; boot(); }
+      const mailLink = contact && contact.includes('@') ? `<a href="mailto:${escapeHTML(contact)}">${escapeHTML(contact)}</a>` : escapeHTML(contact);
+
+      return `
+        <div class="crew-card">
+          <div class="head">
+            <div class="avatar">${escapeHTML(initials(name))}</div>
+            <div>
+              <div class="name">${escapeHTML(name || '—')}</div>
+              <div class="role">${escapeHTML(role || '—')}</div>
+            </div>
+            <div style="margin-left:auto;">
+              <span class="badge ${statusClass(status)}">${escapeHTML(status || '—')}</span>
+            </div>
+          </div>
+
+          <div class="meta">
+            <div><span>Crew ID:</span> ${escapeHTML(crewId || '—')}</div>
+            <div><span>Project:</span> ${escapeHTML(project || '—')}</div>
+          </div>
+
+          <div class="chips">
+            ${skills.map(s => `<span class="chip">${escapeHTML(s)}</span>`).join('')}
+          </div>
+
+          <div class="contact" style="margin-top:8px;">
+            <span style="color:#6b7280;">Contact:</span> ${mailLink || '—'}
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  async function getCrew() {
+    try {
+      getBtn.disabled = true;
+      getBtn.textContent = 'Loading…';
+      statusEl.style.display = 'inline';
+      statusEl.style.color = '#6b7280';
+      statusEl.textContent = 'Fetching from API…';
+      cards.innerHTML = '';
+
+      const url = buildUrl();
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error(`HTTP ${r.status}: ${txt}`);
+      }
+      const data = await r.json();
+      const records = data.records || [];
+      renderCards(records);
+
+      statusEl.style.color = '#059669';
+      statusEl.textContent = `Done. ${records.length} crew.`;
+    } catch (e) {
+      statusEl.style.color = '#e11d48';
+      statusEl.textContent = `Error: ${e.message}`;
+      cards.innerHTML = '';
+      console.error(e);
+    } finally {
+      getBtn.disabled = false;
+      getBtn.textContent = 'Get';
+    }
+  }
+
+  getBtn.addEventListener('click', getCrew);
 })();
 </script>
