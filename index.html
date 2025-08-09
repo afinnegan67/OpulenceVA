@@ -113,10 +113,10 @@
 
   <script>
     // -------------------------------
-    // Optional: global config (Airtable/proxy) for fragments to read
+    // Optional: global config for fragments to read
     // -------------------------------
     window.OPULENCE = window.OPULENCE || {
-      // proxyUrl: "/api/crew", // recommended for Airtable access
+      // proxyUrl: "/api/crew",
       // airtableApiKey: "YOUR_API_KEY",
       // baseId: "YOUR_BASE_ID",
       // crewTable: "Crew",
@@ -146,12 +146,14 @@
         return;
       }
 
+      // update active nav state
       if (navEl) {
         [...navEl.querySelectorAll('button')].forEach(b => {
           b.classList.toggle('active', b.dataset.view === name);
         });
       }
 
+      // loading UI
       spaceEl.innerHTML = `
         <div>
           <div class="loader" aria-label="Loading"></div>
@@ -161,13 +163,14 @@
 
       try {
         const res = await fetch(file, { cache: 'no-store' });
-        if (!res.ok) throw new Error(`Failed to load ${file} (${res.status})`);
+        if (!res.ok) throw new Error(\`Failed to load ${file} (\${res.status})\`);
         const html = await res.text();
         spaceEl.innerHTML = html;
         executeScripts(spaceEl);
-        
+
         if (window.afterDashboardLoad) window.afterDashboardLoad(name);
-        location.hash = `#/${name}`;
+        // maintain SPA deep-link format (/#/crew)
+        location.hash = \`#/\${name}\`;
       } catch (err) {
         console.error(err);
         spaceEl.innerHTML = `
@@ -190,7 +193,6 @@
           newScript.textContent = script.innerHTML;
         }
         document.body.appendChild(newScript);
-        // Remove the script element after execution (optional)
         document.body.removeChild(newScript);
       });
     }
@@ -219,7 +221,7 @@
     bootFromHash(); // run once
 
     // -------------------------------
-    // Voice Status + bridge
+    // Voice Status + widget bridge
     // -------------------------------
     function showVoiceStatus(message) {
       const voiceStatus = document.getElementById('voiceStatus');
@@ -229,9 +231,9 @@
       setTimeout(() => voiceStatus.classList.remove('show'), 3000);
     }
 
-    // Listen for Vapi widget events
+    // Listen for Vapi widget events + custom bridge
     window.addEventListener('message', function(event) {
-      // Vapi events (nice status toasts)
+      // Vapi events
       if (event.data && event.data.type === 'vapi-widget') {
         switch (event.data.event) {
           case 'call-start': showVoiceStatus('🎤 Voice call started'); break;
@@ -243,10 +245,7 @@
             break;
         }
       }
-
-      // Custom bridge: your agent can postMessage to load a view
-      // example payload:
-      // window.parent.postMessage({ type:'opulence', action:'loadDashboard', name:'crew' }, '*')
+      // Custom bridge
       if (event.data && event.data.type === 'opulence' && event.data.action === 'loadDashboard') {
         const name = String(event.data.name || '').toLowerCase();
         if (VIEW_MAP[name]) loadDashboard(name);
@@ -256,77 +255,50 @@
     console.log('Opulence Dashboard initialized - Voice widget ready');
   </script>
 
-  <!-- Voice-driven view switching that keeps index.html shell and just swaps the dashboard content -->
-<script>
-(function () {
-  const ALLOWED = new Set(['overview','schedule','crew','problems']);
-  let lastUpdate = 0;
+  <!-- Voice-driven view switching (polls /api/voice-intent and ONLY swaps the in-page view) -->
+  <script>
+  (function(){
+    const ALLOWED = new Set(['overview','schedule','crew','problems']);
+    let lastUpdate = 0;
 
-  // Prefer your app's existing loader
-  async function loadView(view) {
-    // Use your real function that swaps the component + hash
-    if (typeof window.loadDashboard === 'function') {
-      return window.loadDashboard(view);
+    // prefer app helper; fallback to simulated click; last resort inject into #dashboardSpace
+    async function loadView(view){
+      if (typeof window.loadDashboard === 'function') return window.loadDashboard(view);
+      const el = document.querySelector(\`[data-view="\${view}"]\`);
+      if (el && typeof el.click === 'function') return el.click();
+
+      const container = document.getElementById('dashboardSpace');
+      if (!container) { console.warn('[voice] dashboard container not found'); return; }
+      const url = \`Components/\${view}.html\`;
+      const r = await fetch(url, { cache:'no-store' });
+      if (!r.ok) throw new Error(\`Failed to load \${url}: \${r.status}\`);
+      container.innerHTML = await r.text();
     }
 
-    // Click the existing tab button as a fallback
-    const btn = document.querySelector(`[data-view="${view}"]`);
-    if (btn && typeof btn.click === 'function') return btn.click();
+    async function poll(){
+      try{
+        const u = new URL('/api/voice-intent', location.origin);
+        if (lastUpdate) u.searchParams.set('since', String(lastUpdate));
 
-    // LAST resort: fetch the partial and inject (use the real container id)
-    const container = document.getElementById('dashboardSpace');
-    if (!container) {
-      console.warn('[voice] dashboard container not found');
-      return;
-    }
-    const url = `Components/${view}.html`;
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error(`Failed to load ${url}: ${r.status}`);
-    container.innerHTML = await r.text();
-  }
+        const res = await fetch(u.toString(), { cache:'no-store' });
+        if (!res.ok) return;
+        const j = await res.json();
 
-  async function poll() {
-    try {
-      const u = new URL('/api/voice-intent', location.origin);
-      if (lastUpdate) u.searchParams.set('since', String(lastUpdate));
+        if (j.updatedAt && j.updatedAt > lastUpdate) lastUpdate = j.updatedAt;
 
-      const res = await fetch(u.toString(), { cache: 'no-store' });
-      if (!res.ok) return;
-
-      const j = await res.json();
-
-      // Track latest timestamp to avoid repeated switches
-      if (j.updatedAt && j.updatedAt > lastUpdate) lastUpdate = j.updatedAt;
-
-      const view = String(j.view || '').toLowerCase();
-      if (j.changed && ALLOWED.has(view)) {
-        // Switch the in-page dashboard only (do NOT change window.location)
-        await loadView(view);
-        // Optional: reflect active view on <html> for styling
-        document.documentElement.setAttribute('data-active-view', view);
-      }
-    } catch (e) {
-      console.warn('[voice] poll error:', e?.message || e);
-    }
-  }
-
-  // Kill any old interval and start this one
-  try { clearInterval(window._voicePollTimer); } catch {}
-  window._voicePollTimer = setInterval(poll, 2000);
-})();
-</script>
-</body>
-</html>
+        const view = String(j.view||'').toLowerCase();
+        if (j.changed && ALLOWED.has(view)) {
+          // DO NOT change window.location.href — stay on index.html
+          await loadView(view);
+          document.documentElement.setAttribute('data-active-view', view);
         }
-      } catch (err) {
-        console.warn('[voice] poll error:', err?.message || err);
+      } catch (e) {
+        console.warn('[voice] poll error:', e?.message || e);
       }
     }
 
-    // Start polling every 2s; clear older nav-based interval if present
     try { clearInterval(window._voicePollTimer); } catch {}
-    pollTimer = setInterval(checkViewChange, 2000);
-    window._voicePollTimer = pollTimer;
+    window._voicePollTimer = setInterval(poll, 2000);
   })();
   </script>
 </body>
