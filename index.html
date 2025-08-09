@@ -257,71 +257,64 @@
   </script>
 
   <!-- Voice-driven view switching that keeps index.html shell and just swaps the dashboard content -->
-  <script>
-  (function(){
-    const ALLOWED = new Set(['overview','schedule','crew','problems']);
-    let lastUpdate = 0;
+<script>
+(function () {
+  const ALLOWED = new Set(['overview','schedule','crew','problems']);
+  let lastUpdate = 0;
 
-    // Resolve your dashboard container (adjust selectors to your shell if needed)
-    function getContainer(){
-      return document.getElementById('dashboard-container')
-          || document.querySelector('[data-dashboard-container]')
-          || document.getElementById('dashboard')
-          || document.getElementById('content');
+  // Prefer your app's existing loader
+  async function loadView(view) {
+    // Use your real function that swaps the component + hash
+    if (typeof window.loadDashboard === 'function') {
+      return window.loadDashboard(view);
     }
 
-    // Fallback loader: fetch component HTML and inject into the container
-    async function fetchAndInject(view){
-      const container = getContainer();
-      if (!container) {
-        console.warn('[voice] dashboard container not found');
-        return;
+    // Click the existing tab button as a fallback
+    const btn = document.querySelector(`[data-view="${view}"]`);
+    if (btn && typeof btn.click === 'function') return btn.click();
+
+    // LAST resort: fetch the partial and inject (use the real container id)
+    const container = document.getElementById('dashboardSpace');
+    if (!container) {
+      console.warn('[voice] dashboard container not found');
+      return;
+    }
+    const url = `Components/${view}.html`;
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`Failed to load ${url}: ${r.status}`);
+    container.innerHTML = await r.text();
+  }
+
+  async function poll() {
+    try {
+      const u = new URL('/api/voice-intent', location.origin);
+      if (lastUpdate) u.searchParams.set('since', String(lastUpdate));
+
+      const res = await fetch(u.toString(), { cache: 'no-store' });
+      if (!res.ok) return;
+
+      const j = await res.json();
+
+      // Track latest timestamp to avoid repeated switches
+      if (j.updatedAt && j.updatedAt > lastUpdate) lastUpdate = j.updatedAt;
+
+      const view = String(j.view || '').toLowerCase();
+      if (j.changed && ALLOWED.has(view)) {
+        // Switch the in-page dashboard only (do NOT change window.location)
+        await loadView(view);
+        // Optional: reflect active view on <html> for styling
+        document.documentElement.setAttribute('data-active-view', view);
       }
-      const url = `/Components/${view}.html`;
-      const r = await fetch(url, { cache:'no-store' });
-      if (!r.ok) throw new Error(`Failed to load ${url}: ${r.status}`);
-      container.innerHTML = await r.text();
-      // Optional: notify components
-      try { window.dispatchEvent(new CustomEvent('dashboard:view-loaded', { detail:{ view } })); } catch {}
+    } catch (e) {
+      console.warn('[voice] poll error:', e?.message || e);
     }
+  }
 
-    // Unified loader that prefers your app’s existing helpers (if any)
-    async function loadView(view){
-      if (typeof window.loadDashboardView === 'function') return window.loadDashboardView(view);
-      if (typeof window.setActiveTab === 'function') return window.setActiveTab(view);
-      // Try simulating an existing tab
-      const el = document.querySelector(`[data-view="${view}"]`) || document.getElementById(`${view}Tab`);
-      if (el && typeof el.click === 'function') { el.click(); return; }
-      // Fallback: fetch and inject
-      return fetchAndInject(view);
-    }
-
-    // Poll the voice intent endpoint
-    async function poll(){
-      try{
-        const u = new URL('/api/voice-intent', location.origin);
-        if (lastUpdate) u.searchParams.set('since', String(lastUpdate));
-        const res = await fetch(u.toString(), { cache:'no-store' });
-        if (!res.ok) return;
-        const j = await res.json();
-        if (j.updatedAt && j.updatedAt > lastUpdate) lastUpdate = j.updatedAt;
-
-        const view = String(j.view||'').toLowerCase();
-        if (j.changed && ALLOWED.has(view)) {
-          await loadView(view);
-          // Reflect active view for styling if you use it
-          try { document.documentElement.setAttribute('data-active-view', view); } catch {}
-        }
-      }catch(e){
-        console.warn('[voice] poll error:', e?.message || e);
-      }
-    }
-
-    // Stop any previous redirect-based poller and start this one
-    try { clearInterval(window._voicePollTimer); } catch {}
-    window._voicePollTimer = setInterval(poll, 2000);
-  })();
-  </script>
+  // Kill any old interval and start this one
+  try { clearInterval(window._voicePollTimer); } catch {}
+  window._voicePollTimer = setInterval(poll, 2000);
+})();
+</script>
 </body>
 </html>
         }
