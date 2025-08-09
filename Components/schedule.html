@@ -1,29 +1,67 @@
 <div style="padding:16px;font-family:system-ui,Arial,sans-serif;">
   <h3>Schedule (Airtable)</h3>
-  <p>Click “Get” to fetch live data from the Schedule table via the API.</p>
+  <p>Click “Get” to fetch live data from the Schedule table via the API, then browse the calendar.</p>
 
-  <div style="margin-bottom:12px;">
+  <div style="margin-bottom:12px;display:flex;gap:8px;align-items:center;">
     <button id="getBtn" style="padding:8px 12px;border:none;border-radius:8px;background:#4f46e5;color:#fff;cursor:pointer;">Get</button>
-    <span id="status" style="margin-left:10px;color:#6b7280;display:none;"></span>
+    <span id="status" style="margin-left:4px;color:#6b7280;display:none;"></span>
+    <div id="monthControls" style="margin-left:auto;display:none;gap:6px;align-items:center;">
+      <button id="prevBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;">‹ Prev</button>
+      <strong id="monthLabel" style="min-width:180px;text-align:center;"></strong>
+      <button id="nextBtn" style="padding:6px 10px;border:1px solid #e5e7eb;border-radius:8px;background:#fff;cursor:pointer;">Next ›</button>
+    </div>
   </div>
 
-  <div id="gantt_container" style="min-height:520px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:8px;">
-    <div id="gantt_chart" style="width:100%;height:520px;"></div>
-  </div>
+  <div id="calendar" class="calendar"></div>
 </div>
 
-<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<style>
+  .calendar {
+    background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:12px;
+  }
+  .cal-grid {
+    display:grid; grid-template-columns: repeat(7, 1fr); gap:8px;
+  }
+  .cal-weekdays {
+    display:grid; grid-template-columns: repeat(7, 1fr); gap:8px; margin-bottom:8px;
+    color:#6b7280; font-size:12px; text-transform:uppercase; letter-spacing:.04em;
+  }
+  .cal-day {
+    min-height:110px; border:1px solid #e5e7eb; border-radius:10px; padding:8px; background:#fafafa;
+    display:flex; flex-direction:column; gap:6px;
+  }
+  .cal-day.other-month { background:#fbfbfb; color:#9ca3af; }
+  .cal-day .date {
+    font-size:12px; color:#6b7280; display:flex; justify-content:space-between; align-items:center;
+  }
+  .pill {
+    display:block; padding:4px 6px; border-radius:8px; font-size:12px; color:#111827; background:#eef2ff; border:1px solid #e5e7eb;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .more {
+    font-size:12px; color:#6b7280;
+  }
+  @media (max-width: 720px) {
+    .cal-day { min-height:90px; }
+  }
+</style>
+
 <script>
 (function(){
-  // Optional overrides (safe): window.OPULENCE = { baseId: 'app...', scheduleTableId: 'tbl...' };
   const cfg = window.OPULENCE || {};
-
   const isLocalStatic = ['localhost','127.0.0.1'].includes(location.hostname);
   const baseApi = isLocalStatic ? 'http://localhost:3000/api/schedule' : '/api/schedule';
 
   const getBtn = document.getElementById('getBtn');
   const statusEl = document.getElementById('status');
-  const ganttEl = document.getElementById('gantt_chart');
+  const calendar = document.getElementById('calendar');
+  const monthControls = document.getElementById('monthControls');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const monthLabel = document.getElementById('monthLabel');
+
+  let TASKS = [];
+  let currentMonth = firstOfMonth(new Date());
 
   function buildUrl() {
     const u = new URL(baseApi, window.location.origin);
@@ -33,23 +71,24 @@
     return u.toString();
   }
 
+  // Helpers
+  function firstOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+  function addMonths(d, n){ return new Date(d.getFullYear(), d.getMonth() + n, 1); }
+  function fmtMonth(d){
+    return d.toLocaleDateString([], { month:'long', year:'numeric' });
+  }
   function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
-  function daysToMilliseconds(days) { return days * 24 * 60 * 60 * 1000; }
 
-  // Robust date parsing: supports ISO (YYYY-MM-DD), MDY (8/7/2025), Date, and epoch numbers
   function parseDate(value){
     if (!value) return null;
     if (value instanceof Date) return isNaN(value) ? null : value;
     if (typeof value === 'number') return new Date(value);
     const s = String(value).trim();
-
-    // YYYY-MM-DD
     let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
     if (m) {
       const dt = new Date(+m[1], +m[2]-1, +m[3]);
       return isNaN(dt) ? null : dt;
     }
-    // M/D/YYYY or MM/DD/YYYY
     m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
     if (m) {
       const dt = new Date(+m[3], +m[1]-1, +m[2]);
@@ -59,96 +98,92 @@
     return isNaN(dt) ? null : dt;
   }
 
-  // Percent parser: handles numbers (0..1 or 0..100) and strings like "70%"
   function parsePercent(v){
     if (typeof v === 'number') return v <= 1 ? Math.round(v * 100) : Math.round(v);
     if (typeof v === 'string') {
       const t = v.trim();
-      if (t.endsWith('%')) return clamp(parseFloat(t.slice(0, -1)) || 0, 0, 100);
-      const num = parseFloat(t);
-      if (!isNaN(num)) return num <= 1 ? Math.round(num * 100) : Math.round(num);
+      if (t.endsWith('%')) return clamp(parseFloat(t.slice(0,-1)) || 0, 0, 100);
+      const n = parseFloat(t);
+      if (!isNaN(n)) return n <= 1 ? Math.round(n*100) : Math.round(n);
     }
     return 0;
   }
 
-  function cleanDeps(v){
-    if (!v) return null;
-    const s = String(v).trim();
-    if (!s || s.toLowerCase() === 'none') return null;
-    return s;
+  function colorForString(s){
+    const str = String(s||'Project');
+    let h = 0;
+    for (let i=0;i<str.length;i++){ h = (h*31 + str.charCodeAt(i)) % 360; }
+    const color = `hsl(${h} 80% 92%)`;
+    const border = `hsl(${h} 35% 70%)`;
+    return { bg: color, border };
   }
 
-  function toDataTable(tasks){
-    // Sort tasks by start date so the chart is predictable
-    const sorted = [...tasks].sort((a,b) => {
-      const as = parseDate(a.startDate) || new Date(8640000000000000); // max date if invalid
-      const bs = parseDate(b.startDate) || new Date(8640000000000000);
-      return as - bs;
+  function inSameMonth(d, monthStart){
+    return d.getFullYear() === monthStart.getFullYear() && d.getMonth() === monthStart.getMonth();
+  }
+
+  function tasksOnDay(tasks, day){
+    const dd = new Date(day.getFullYear(), day.getMonth(), day.getDate());
+    return tasks.filter(t => {
+      const s = parseDate(t.startDate);
+      const e0 = parseDate(t.endDate);
+      if (!s) return false;
+      const e = e0 && e0 >= s ? e0 : s; // 1-day if end missing/invalid
+      return s <= dd && dd <= e;
     });
-
-    const data = new google.visualization.DataTable();
-    data.addColumn('string', 'Task ID');
-    data.addColumn('string', 'Task Name');
-    data.addColumn('string', 'Resource');
-    data.addColumn('date', 'Start Date');
-    data.addColumn('date', 'End Date');
-    data.addColumn('number', 'Duration');
-    data.addColumn('number', 'Percent Complete');
-    data.addColumn('string', 'Dependencies');
-
-    const rows = [];
-    let skipped = 0;
-
-    for (const t of sorted) {
-      const start = parseDate(t.startDate);
-      if (!start) { skipped++; continue; } // must have a valid start date
-      let end = parseDate(t.endDate);
-      if (!end || end <= start) end = new Date(start.getTime() + daysToMilliseconds(1));
-
-      const pct = clamp(parsePercent(t.percentComplete), 0, 100);
-      rows.push([
-        t.taskId || t.id || String(rows.length + 1),
-        t.name || '',
-        t.project || '',  // shows project label in the "Resource" column
-        start,
-        end,
-        null,             // duration is computed from start/end
-        pct,
-        cleanDeps(t.dependencies)
-      ]);
-    }
-
-    if (skipped > 0) {
-      // Surface a gentle note (doesn't block rendering)
-      console.warn(`Skipped ${skipped} task(s) with invalid/missing start date`);
-      statusEl.style.display = 'inline';
-      statusEl.style.color = '#6b7280';
-      statusEl.textContent = `Loaded ${rows.length} tasks. Skipped ${skipped} with missing dates.`;
-    }
-
-    if (rows.length) data.addRows(rows);
-    return data;
   }
 
-  function drawGantt(tasks){
-    const chartData = toDataTable(tasks);
-    const computedHeight = Math.max(240, 60 + chartData.getNumberOfRows() * 42);
-    const options = {
-      height: computedHeight,
-      gantt: {
-        trackHeight: 38,
-        percentEnabled: true
-      }
-    };
-    try {
-      const chart = new google.visualization.Gantt(ganttEl);
-      chart.draw(chartData, options);
-    } catch (err) {
-      console.error('Gantt draw error:', err);
-      statusEl.style.display = 'inline';
-      statusEl.style.color = '#e11d48';
-      statusEl.textContent = `Error drawing chart: ${err.message}`;
+  function renderCalendar(monthStart){
+    const start = firstOfMonth(monthStart);
+    const end = new Date(start.getFullYear(), start.getMonth()+1, 0); // last day of month
+    const startWeekDay = new Date(start.getFullYear(), start.getMonth(), 1).getDay(); // 0..6
+    const gridStart = new Date(start); gridStart.setDate(1 - startWeekDay);
+    const gridEnd = new Date(end); gridEnd.setDate(end.getDate() + (6 - end.getDay()));
+
+    monthLabel.textContent = fmtMonth(start);
+    monthControls.style.display = 'flex';
+
+    const weekdays = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const head = `
+      <div class="cal-weekdays">
+        ${weekdays.map(w => `<div style="text-align:center;">${w}</div>`).join('')}
+      </div>
+    `;
+
+    let html = '<div class="cal-grid">';
+    for (let d = new Date(gridStart); d <= gridEnd; d.setDate(d.getDate()+1)) {
+      const day = new Date(d);
+      const other = !inSameMonth(day, start);
+      const dayTasks = tasksOnDay(TASKS, day);
+      const top3 = dayTasks.slice(0,3);
+      const more = dayTasks.length - top3.length;
+
+      const items = top3.map(t => {
+        const { bg, border } = colorForString(t.project);
+        const pct = parsePercent(t.percentComplete);
+        const name = (t.name || t.taskId || t.id || '').toString();
+        return `<span class="pill" title="${escapeHTML(name)} (${pct}% ${escapeHTML(t.project||'')})" style="background:${bg};border-color:${border};">${escapeHTML(name)}</span>`;
+      }).join('');
+
+      html += `
+        <div class="cal-day ${other ? 'other-month':''}">
+          <div class="date">
+            <span>${day.getDate()}</span>
+          </div>
+          <div class="items" style="display:flex;flex-direction:column;gap:4px;">
+            ${items || '<span class="more" style="visibility:hidden;">&nbsp;</span>'}
+            ${more > 0 ? `<span class="more">+${more} more</span>` : ''}
+          </div>
+        </div>
+      `;
     }
+    html += '</div>';
+
+    calendar.innerHTML = head + html;
+  }
+
+  function escapeHTML(s){
+    return String(s||"").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
   }
 
   async function getSchedule() {
@@ -168,31 +203,42 @@
       const data = await r.json();
       const tasks = Array.isArray(data.tasks) ? data.tasks : [];
 
-      if (typeof google !== 'undefined' && google.charts) {
-        if (!google.visualization || !google.visualization.Gantt) {
-          google.charts.load('current', { packages: ['gantt'] });
-          google.charts.setOnLoadCallback(() => drawGantt(tasks));
-        } else {
-          drawGantt(tasks);
-        }
-      } else {
-        google.charts.load('current', { packages: ['gantt'] });
-        google.charts.setOnLoadCallback(() => drawGantt(tasks));
-      }
+      // Normalize minimally and keep only valid ones with a start date
+      TASKS = tasks.filter(t => parseDate(t.startDate));
+
+      // Choose the month to display (earliest task start or current month)
+      const minStart = TASKS.reduce((acc, t) => {
+        const s = parseDate(t.startDate);
+        return s && (!acc || s < acc) ? s : acc;
+      }, null);
+      currentMonth = firstOfMonth(minStart || new Date());
+
+      renderCalendar(currentMonth);
 
       statusEl.style.display = 'inline';
       statusEl.style.color = '#059669';
-      statusEl.textContent = `Done. ${tasks.length} tasks.`;
+      statusEl.textContent = `Done. ${TASKS.length} tasks loaded.`;
     } catch (e) {
       statusEl.style.display = 'inline';
       statusEl.style.color = '#e11d48';
       statusEl.textContent = `Error: ${e.message}`;
       console.error(e);
+      calendar.innerHTML = '';
     } finally {
       getBtn.disabled = false;
       getBtn.textContent = 'Get';
     }
   }
+
+  // Month navigation
+  prevBtn?.addEventListener('click', () => {
+    currentMonth = addMonths(currentMonth, -1);
+    renderCalendar(currentMonth);
+  });
+  nextBtn?.addEventListener('click', () => {
+    currentMonth = addMonths(currentMonth, 1);
+    renderCalendar(currentMonth);
+  });
 
   getBtn.addEventListener('click', getSchedule);
 })();
