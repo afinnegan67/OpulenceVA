@@ -10,6 +10,13 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed' });
   }
 
+  // Polyfill fetch for older runtimes
+  async function getFetch() {
+    if (typeof fetch !== 'undefined') return fetch;
+    const mod = await import('node-fetch');
+    return mod.default;
+  }
+
   try {
     const baseId = req.query.baseId || process.env.AIRTABLE_BASE_ID;
     const apiKey = process.env.AIRTABLE_API_KEY || process.env.AIRTABLE_TOKEN;
@@ -28,6 +35,8 @@ export default async function handler(req, res) {
       });
     }
 
+    const $fetch = await getFetch();
+
     // Paged fetch
     const makeUrl = (offset) => {
       const u = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
@@ -42,10 +51,10 @@ export default async function handler(req, res) {
     const records = [];
     let next = makeUrl();
     while (next) {
-      const r = await fetch(next, { headers: { Authorization: `Bearer ${apiKey}` } });
+      const r = await $fetch(next, { headers: { Authorization: `Bearer ${apiKey}` } });
       if (!r.ok) {
         const text = await r.text();
-        return res.status(r.status).json({ error: 'Airtable error', status: r.status, detail: text });
+        return res.status(r.status).json({ error: 'Airtable error', status: r.status, detail: text, baseId, table });
       }
       const j = await r.json();
       records.push(...(j.records || []));
@@ -87,6 +96,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ baseId, table, count: tasks.length, tasks });
   } catch (e) {
     console.error('[api/schedule]', e);
-    return res.status(500).json({ error: e.message });
+    return res.status(500).json({ error: 'Function crashed', detail: e.message });
   }
 }
