@@ -256,5 +256,85 @@
     console.log('Opulence Dashboard initialized - Voice widget ready');
   </script>
 
+  <!-- Voice-driven view switching without full-page navigation -->
+  <script>
+  (function(){
+    // Allowed views to prevent arbitrary fetches
+    const ALLOWED = new Set(['crew', 'schedule', 'problems', 'overview']);
+
+    // Try to resolve the dashboard container (adjust the selectors to match your shell)
+    function resolveContainer() {
+      return document.getElementById('dashboard-container')
+          || document.querySelector('[data-dashboard-container]')
+          || document.getElementById('dashboard')
+          || document.getElementById('content')
+          || document.body; // last resort
+    }
+
+    // Fallback loader if app-level helpers are not present
+    async function fallbackLoadDashboardView(view) {
+      const container = resolveContainer();
+      if (!container) {
+        console.warn('[voice] dashboard container not found');
+        return;
+      }
+      const url = `/Components/${view}.html`;
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error(`Failed to load ${url}: ${r.status}`);
+      const html = await r.text();
+      container.innerHTML = html;
+      // Optional: dispatch event so component scripts can boot if needed
+      try { window.dispatchEvent(new CustomEvent('dashboard:view-loaded', { detail: { view } })); } catch {}
+    }
+
+    // Unified loader that prefers your existing helpers
+    async function loadView(view) {
+      if (typeof window.loadDashboardView === 'function') {
+        return window.loadDashboardView(view);
+      }
+      if (typeof window.setActiveTab === 'function') {
+        return window.setActiveTab(view);
+      }
+      return fallbackLoadDashboardView(view);
+    }
+
+    // Poll /api/voice-intent for changes
+    let lastUpdate = 0;
+    let currentView = null;
+    let pollTimer;
+
+    async function checkViewChange() {
+      try {
+        const u = new URL('/api/voice-intent', window.location.origin);
+        if (lastUpdate) u.searchParams.set('since', String(lastUpdate));
+        const res = await fetch(u.toString(), { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data) return;
+
+        // Track update timestamp
+        if (Number.isFinite(+data.updatedAt) && data.updatedAt > lastUpdate) {
+          lastUpdate = data.updatedAt;
+        }
+
+        // Only act on changes with a supported view
+        const view = String(data.view || '').toLowerCase();
+        if (data.changed && ALLOWED.has(view) && view !== currentView) {
+          currentView = view;
+          await loadView(view);
+          // Optionally reflect active tab state if your app uses it
+          try { document.documentElement.setAttribute('data-active-view', view); } catch {}
+        }
+      } catch (err) {
+        console.warn('[voice] poll error:', err?.message || err);
+      }
+    }
+
+    // Start polling every 2s; clear older nav-based interval if present
+    try { clearInterval(window._voicePollTimer); } catch {}
+    pollTimer = setInterval(checkViewChange, 2000);
+    window._voicePollTimer = pollTimer;
+  })();
+  </script>
 </body>
 </html>
