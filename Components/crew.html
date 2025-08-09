@@ -145,14 +145,30 @@
 
   function normalize(rec){
     const f = rec.fields || {};
-    const name = f['Name'] || f['Full Name'] || f['Crew Member'] || f['Employee'] || f['First Name'] && f['Last Name'] ? `${f['First Name']} ${f['Last Name']}`.trim() : '';
+    // Build name robustly; avoid operator-precedence bug and undefined pieces
+    let name =
+      f['Name'] ||
+      f['Full Name'] ||
+      f['Crew Member'] ||
+      f['Employee'] ||
+      f['Crew Name'] ||
+      f['Worker Name'] ||
+      '';
+
+    if (!name && (f['First Name'] || f['Last Name'] || f['First'] || f['Last'])) {
+      const fn = (f['First Name'] || f['First'] || '').toString().trim();
+      const ln = (f['Last Name'] || f['Last'] || '').toString().trim();
+      name = `${fn} ${ln}`.trim();
+    }
+    name = (name || '').toString().trim();
+
     const role = f['Role'] || f['Title'] || f['Position'] || '';
     const project = f['Project'] || f['Assigned Project'] || f['Current Project'] || '';
     const phone = f['Phone'] || f['Phone Number'] || '';
     const email = f['Email'] || f['E-mail'] || '';
     const availBool = typeof f['Available'] === 'boolean' ? f['Available'] : undefined;
     const avail = statusKey(f['Status'] || f['Availability'], availBool);
-    let skills = f['Skills'] || f['Skill'] || '';
+    let skills = f['Skills'] || f['Skill'] || f['Primary Skills'] || '';
     if (Array.isArray(skills)) skills = skills.join(', ');
     return { id: rec.id, name, role, project, phone, email, avail, skills };
   }
