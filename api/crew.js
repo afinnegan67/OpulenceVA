@@ -1,4 +1,10 @@
 export default async function handler(req, res) {
+  // CORS + preflight (harmless on same-origin; helps when testing locally)
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
   if (req.method !== 'GET') {
     res.setHeader('Allow', 'GET');
     return res.status(405).json({ error: 'Method Not Allowed' });
@@ -16,9 +22,17 @@ export default async function handler(req, res) {
       'Crew';
 
     if (!baseId || !apiKey || !table) {
-      return res.status(500).json({ error: 'Missing AIRTABLE_BASE_ID, AIRTABLE_API_KEY, or Crew table id/name' });
+      return res.status(500).json({
+        error: 'Missing configuration',
+        detail: {
+          hasBaseId: !!baseId,
+          hasApiKey: !!apiKey,
+          table
+        }
+      });
     }
 
+    // Helper to build paged URLs
     const makeUrl = (offset) => {
       const u = new URL(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(table)}`);
       u.searchParams.set('pageSize', '100');
@@ -35,7 +49,8 @@ export default async function handler(req, res) {
       const r = await fetch(next, { headers: { Authorization: `Bearer ${apiKey}` } });
       if (!r.ok) {
         const text = await r.text();
-        throw new Error(`Airtable error ${r.status}: ${text}`);
+        // Surface Airtable errors in response for debugging
+        return res.status(r.status).json({ error: 'Airtable error', status: r.status, detail: text });
       }
       const j = await r.json();
       records.push(...(j.records || []));
@@ -43,7 +58,7 @@ export default async function handler(req, res) {
     }
 
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ records });
+    return res.status(200).json({ baseId, table, count: records.length, records });
   } catch (e) {
     console.error('[api/crew]', e);
     return res.status(500).json({ error: e.message });
