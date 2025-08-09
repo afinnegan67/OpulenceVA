@@ -36,24 +36,56 @@
   function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
   function daysToMilliseconds(days) { return days * 24 * 60 * 60 * 1000; }
 
-  // Parse "YYYY-MM-DD" (or any string Date) safely into a local Date (no TZ shifts)
-  function parseYMD(value){
+  // Robust date parsing: supports ISO (YYYY-MM-DD), MDY (8/7/2025), Date, and epoch numbers
+  function parseDate(value){
     if (!value) return null;
     if (value instanceof Date) return isNaN(value) ? null : value;
     if (typeof value === 'number') return new Date(value);
     const s = String(value).trim();
-    // Expect "YYYY-MM-DD"
-    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+
+    // YYYY-MM-DD
+    let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
     if (m) {
-      const y = +m[1], mo = +m[2] - 1, d = +m[3];
-      const dt = new Date(y, mo, d);
+      const dt = new Date(+m[1], +m[2]-1, +m[3]);
+      return isNaN(dt) ? null : dt;
+    }
+    // M/D/YYYY or MM/DD/YYYY
+    m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(s);
+    if (m) {
+      const dt = new Date(+m[3], +m[1]-1, +m[2]);
       return isNaN(dt) ? null : dt;
     }
     const dt = new Date(s);
     return isNaN(dt) ? null : dt;
   }
 
+  // Percent parser: handles numbers (0..1 or 0..100) and strings like "70%"
+  function parsePercent(v){
+    if (typeof v === 'number') return v <= 1 ? Math.round(v * 100) : Math.round(v);
+    if (typeof v === 'string') {
+      const t = v.trim();
+      if (t.endsWith('%')) return clamp(parseFloat(t.slice(0, -1)) || 0, 0, 100);
+      const num = parseFloat(t);
+      if (!isNaN(num)) return num <= 1 ? Math.round(num * 100) : Math.round(num);
+    }
+    return 0;
+  }
+
+  function cleanDeps(v){
+    if (!v) return null;
+    const s = String(v).trim();
+    if (!s || s.toLowerCase() === 'none') return null;
+    return s;
+  }
+
   function toDataTable(tasks){
+    // Sort tasks by start date so the chart is predictable
+    const sorted = [...tasks].sort((a,b) => {
+      const as = parseDate(a.startDate) || new Date(8640000000000000); // max date if invalid
+      const bs = parseDate(b.startDate) || new Date(8640000000000000);
+      return as - bs;
+    });
+
     const data = new google.visualization.DataTable();
     data.addColumn('string', 'Task ID');
     data.addColumn('string', 'Task Name');
@@ -65,35 +97,44 @@
     data.addColumn('string', 'Dependencies');
 
     const rows = [];
-    for (const t of tasks) {
-      const start = parseYMD(t.startDate) || new Date();
-      let end = parseYMD(t.endDate);
-      if (!end || end <= start) {
-        end = new Date(start.getTime() + daysToMilliseconds(1));
-      }
-      const pct = clamp(Number.isFinite(+t.percentComplete) ? +t.percentComplete : 0, 0, 100);
+    let skipped = 0;
 
+    for (const t of sorted) {
+      const start = parseDate(t.startDate);
+      if (!start) { skipped++; continue; } // must have a valid start date
+      let end = parseDate(t.endDate);
+      if (!end || end <= start) end = new Date(start.getTime() + daysToMilliseconds(1));
+
+      const pct = clamp(parsePercent(t.percentComplete), 0, 100);
       rows.push([
         t.taskId || t.id || String(rows.length + 1),
         t.name || '',
-        t.project || '',
+        t.project || '',  // shows project label in the "Resource" column
         start,
         end,
-        null, // duration is computed from start/end
+        null,             // duration is computed from start/end
         pct,
-        t.dependencies || null
+        cleanDeps(t.dependencies)
       ]);
     }
 
-    if (!rows.length) return data;
-    data.addRows(rows);
+    if (skipped > 0) {
+      // Surface a gentle note (doesn't block rendering)
+      console.warn(`Skipped ${skipped} task(s) with invalid/missing start date`);
+      statusEl.style.display = 'inline';
+      statusEl.style.color = '#6b7280';
+      statusEl.textContent = `Loaded ${rows.length} tasks. Skipped ${skipped} with missing dates.`;
+    }
+
+    if (rows.length) data.addRows(rows);
     return data;
   }
 
   function drawGantt(tasks){
     const chartData = toDataTable(tasks);
+    const computedHeight = Math.max(240, 60 + chartData.getNumberOfRows() * 42);
     const options = {
-      height: Math.max(200, 60 + tasks.length * 42),
+      height: computedHeight,
       gantt: {
         trackHeight: 38,
         percentEnabled: true
@@ -125,7 +166,7 @@
         throw new Error(`HTTP ${r.status}: ${txt}`);
       }
       const data = await r.json();
-      const tasks = data.tasks || [];
+      const tasks = Array.isArray(data.tasks) ? data.tasks : [];
 
       if (typeof google !== 'undefined' && google.charts) {
         if (!google.visualization || !google.visualization.Gantt) {
@@ -139,9 +180,11 @@
         google.charts.setOnLoadCallback(() => drawGantt(tasks));
       }
 
+      statusEl.style.display = 'inline';
       statusEl.style.color = '#059669';
       statusEl.textContent = `Done. ${tasks.length} tasks.`;
     } catch (e) {
+      statusEl.style.display = 'inline';
       statusEl.style.color = '#e11d48';
       statusEl.textContent = `Error: ${e.message}`;
       console.error(e);
