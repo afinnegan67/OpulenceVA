@@ -36,6 +36,23 @@
   function clamp(n, min, max){ return Math.max(min, Math.min(max, n)); }
   function daysToMilliseconds(days) { return days * 24 * 60 * 60 * 1000; }
 
+  // Parse "YYYY-MM-DD" (or any string Date) safely into a local Date (no TZ shifts)
+  function parseYMD(value){
+    if (!value) return null;
+    if (value instanceof Date) return isNaN(value) ? null : value;
+    if (typeof value === 'number') return new Date(value);
+    const s = String(value).trim();
+    // Expect "YYYY-MM-DD"
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+    if (m) {
+      const y = +m[1], mo = +m[2] - 1, d = +m[3];
+      const dt = new Date(y, mo, d);
+      return isNaN(dt) ? null : dt;
+    }
+    const dt = new Date(s);
+    return isNaN(dt) ? null : dt;
+  }
+
   function toDataTable(tasks){
     const data = new google.visualization.DataTable();
     data.addColumn('string', 'Task ID');
@@ -47,21 +64,28 @@
     data.addColumn('number', 'Percent Complete');
     data.addColumn('string', 'Dependencies');
 
-    const rows = tasks.map(t => {
-      const start = t.startDate ? new Date(t.startDate) : new Date();
-      const end = t.endDate ? new Date(t.endDate) : new Date(start.getTime() + daysToMilliseconds(1));
-      return [
-        t.taskId || t.id,
+    const rows = [];
+    for (const t of tasks) {
+      const start = parseYMD(t.startDate) || new Date();
+      let end = parseYMD(t.endDate);
+      if (!end || end <= start) {
+        end = new Date(start.getTime() + daysToMilliseconds(1));
+      }
+      const pct = clamp(Number.isFinite(+t.percentComplete) ? +t.percentComplete : 0, 0, 100);
+
+      rows.push([
+        t.taskId || t.id || String(rows.length + 1),
         t.name || '',
         t.project || '',
         start,
         end,
-        null,
-        clamp(Number(t.percentComplete || 0), 0, 100),
+        null, // duration is computed from start/end
+        pct,
         t.dependencies || null
-      ];
-    });
+      ]);
+    }
 
+    if (!rows.length) return data;
     data.addRows(rows);
     return data;
   }
@@ -75,8 +99,15 @@
         percentEnabled: true
       }
     };
-    const chart = new google.visualization.Gantt(ganttEl);
-    chart.draw(chartData, options);
+    try {
+      const chart = new google.visualization.Gantt(ganttEl);
+      chart.draw(chartData, options);
+    } catch (err) {
+      console.error('Gantt draw error:', err);
+      statusEl.style.display = 'inline';
+      statusEl.style.color = '#e11d48';
+      statusEl.textContent = `Error drawing chart: ${err.message}`;
+    }
   }
 
   async function getSchedule() {
@@ -96,7 +127,6 @@
       const data = await r.json();
       const tasks = data.tasks || [];
 
-      // Load Google Charts if needed, then draw
       if (typeof google !== 'undefined' && google.charts) {
         if (!google.visualization || !google.visualization.Gantt) {
           google.charts.load('current', { packages: ['gantt'] });
@@ -105,8 +135,6 @@
           drawGantt(tasks);
         }
       } else {
-        // Safety: load and then draw
-        window.google = window.google || {};
         google.charts.load('current', { packages: ['gantt'] });
         google.charts.setOnLoadCallback(() => drawGantt(tasks));
       }
