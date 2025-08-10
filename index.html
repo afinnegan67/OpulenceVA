@@ -304,24 +304,51 @@
       setTimeout(() => voiceStatus.classList.remove('show'), 3000);
     }
 
+    // Helper: extract a view name from arbitrary payload shapes
+    function extractView(payload) {
+      if (!payload) return null;
+      const pick = v => (v && typeof v === 'string') ? v.toLowerCase() : null;
+      return (
+        pick(payload.view) ||
+        pick(payload.name) ||
+        pick(payload.targetView) ||
+        pick(payload.target) ||
+        pick(payload.command) ||
+        pick(payload.action && payload.action.view) ||
+        pick(payload.intent && payload.intent.view) ||
+        pick(payload.payload && payload.payload.view) ||
+        pick(payload.metadata && (payload.metadata.view || payload.metadata.loadDashboard)) ||
+        null
+      );
+    }
+
     // Listen for Vapi widget events + custom bridge
     window.addEventListener('message', function(event) {
-      // Vapi events
-      if (event.data && event.data.type === 'vapi-widget') {
-        switch (event.data.event) {
-          case 'call-start': showVoiceStatus('🎤 Voice call started'); break;
-          case 'call-end':   showVoiceStatus('👋 Voice call ended'); break;
-          case 'message':
-            if (event.data.message && event.data.message.transcript) {
-              showVoiceStatus(`"${event.data.message.transcript}"`);
+      try {
+        // Vapi events
+        if (event.data && event.data.type === 'vapi-widget') {
+          switch (event.data.event) {
+            case 'call-start': showVoiceStatus('🎤 Voice call started'); break;
+            case 'call-end':   showVoiceStatus('👋 Voice call ended'); break;
+            case 'message': {
+              const msg = event.data.message || {};
+              if (msg.transcript) showVoiceStatus(`"${msg.transcript}"`);
+              const v = extractView(msg) || extractView(msg.data) || extractView(msg.metadata);
+              if (v && VIEW_MAP[v]) {
+                loadDashboard(v);
+                showVoiceStatus(`Switching to ${v}`);
+              }
+              break;
             }
-            break;
+          }
         }
-      }
-      // Custom bridge
-      if (event.data && event.data.type === 'opulence' && event.data.action === 'loadDashboard') {
-        const name = String(event.data.name || '').toLowerCase();
-        if (VIEW_MAP[name]) loadDashboard(name);
+        // Custom bridge (backward compatible)
+        if (event.data && event.data.type === 'opulence') {
+          const v = extractView(event.data) || extractView(event.data.payload) || extractView(event.data.action);
+          if (v && VIEW_MAP[v]) loadDashboard(v);
+        }
+      } catch (e) {
+        console.warn('[voice] postMessage parse error:', e?.message || e);
       }
     });
 
@@ -332,14 +359,13 @@
   <script>
   (function(){
     const ALLOWED = new Set(['overview','schedule','crew','problems']);
-    let lastUpdate = 0;
+    let lastToken = null;
+    let lastView = null;
 
-    // prefer app helper; fallback to simulated click; last resort inject into #dashboardSpace
     async function loadView(view){
       if (typeof window.loadDashboard === 'function') return window.loadDashboard(view);
       const el = document.querySelector(`[data-view="${view}"]`);
       if (el && typeof el.click === 'function') return el.click();
-
       const container = document.getElementById('dashboardSpace');
       if (!container) { console.warn('[voice] dashboard container not found'); return; }
       const url = `Components/${view}.html`;
@@ -348,22 +374,52 @@
       container.innerHTML = await r.text();
     }
 
+    function extractView(obj){
+      if (!obj) return null;
+      const pick = v => (v && typeof v === 'string') ? v.toLowerCase() : null;
+      return (
+        pick(obj.view) ||
+        pick(obj.name) ||
+        pick(obj.intent && obj.intent.view) ||
+        pick(obj.action && obj.action.view) ||
+        pick(obj.payload && obj.payload.view) ||
+        pick(obj.targetView) ||
+        pick(obj.target) ||
+        pick(obj.command) ||
+        null
+      );
+    }
+
+    function extractToken(obj){
+      return obj.updatedAt ?? obj.ts ?? obj.time ?? obj.version ?? obj.rev ?? obj.revision ?? null;
+    }
+
     async function poll(){
       try{
         const u = new URL('/api/voice-intent', location.origin);
-        if (lastUpdate) u.searchParams.set('since', String(lastUpdate));
+        if (lastToken != null) u.searchParams.set('since', String(lastToken));
 
         const res = await fetch(u.toString(), { cache:'no-store' });
         if (!res.ok) return;
         const j = await res.json();
 
-        if (j.updatedAt && j.updatedAt > lastUpdate) lastUpdate = j.updatedAt;
+        const token = extractToken(j);
+        const view = extractView(j);
 
-        const view = String(j.view||'').toLowerCase();
-        if (j.changed && ALLOWED.has(view)) {
-          // DO NOT change window.location.href — stay on index.html
+        // Treat as changed if:
+        // - backend flags changed, or
+        // - token advanced, or
+        // - view differs from lastView
+        const changed = Boolean(j.changed) || (token != null && token !== lastToken) || (view && view !== lastView);
+
+        if (view && ALLOWED.has(view) && changed) {
           await loadView(view);
           document.documentElement.setAttribute('data-active-view', view);
+          lastView = view;
+          if (token != null) lastToken = token;
+          try { showVoiceStatus(`Switched to ${view}`); } catch {}
+        } else if (token != null && token !== lastToken) {
+          lastToken = token; // progress token even if no recognized view
         }
       } catch (e) {
         console.warn('[voice] poll error:', e?.message || e);
