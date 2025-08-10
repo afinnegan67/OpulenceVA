@@ -280,6 +280,22 @@
         });
       }
 
+      autoInit(name) {
+        // Auto-init: trigger GET on supported dashboards as soon as they load
+        const AUTO_INIT = new Set(['crew','overview','schedule','problems']);
+        if (AUTO_INIT.has(name)) {
+          if (this.DEBUG) console.log('[DEBUG] Auto-initializing dashboard:', name);
+          // Find and trigger the refresh/get button in the loaded component
+          setTimeout(() => {
+            const getBtn = document.getElementById('getBtn');
+            if (getBtn && typeof getBtn.click === 'function') {
+              if (this.DEBUG) console.log('[DEBUG] Auto-clicking refresh button for:', name);
+              getBtn.click();
+            }
+          }, 100); // Small delay to ensure DOM is ready
+        }
+      }
+
       // Map common utterances to a view id
       mapUtteranceToView(text) {
         if (!text) return null;
