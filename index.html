@@ -431,6 +431,7 @@
 
     // Initialize dashboard
     const dashboard = new DashboardManager();
+    dashboard.init();
     window.loadDashboard = (view) => dashboard.loadView(view);
 
     // Debug helpers
