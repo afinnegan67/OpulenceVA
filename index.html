@@ -165,6 +165,7 @@
         this.navEl = document.getElementById('topnav');
         this.currentView = null;
         this.lastToken = null;
+        this.DEBUG = /debug=1/.test(location.search) || localStorage.opulenceDebug === '1';
         
         this.init();
       }
@@ -179,6 +180,9 @@
         // Hash routing
         window.addEventListener('hashchange', () => this.bootFromHash());
         this.bootFromHash();
+
+        // If no view loaded via hash, default to overview
+        if (!this.currentView) this.loadView('overview');
 
         // Voice integration
         this.initVoiceIntegration();
@@ -197,13 +201,10 @@
           const html = await response.text();
           this.spaceEl.innerHTML = html;
           this.executeScripts();
-          
+
           this.currentView = name;
           location.hash = `#/${name}`;
-          
-          // Auto-initialize if needed
           this.autoInit(name);
-          
         } catch (error) {
           this.showError(name, error);
         }
@@ -235,46 +236,85 @@
       }
 
       executeScripts() {
+        // Support inline and external scripts
         this.spaceEl.querySelectorAll("script").forEach(script => {
           const newScript = document.createElement("script");
-          newScript.textContent = script.innerHTML;
+          if (script.src) {
+            newScript.src = script.src;
+          } else {
+            newScript.textContent = script.innerHTML;
+          }
           document.body.appendChild(newScript);
           document.body.removeChild(newScript);
         });
       }
 
-      autoInit(name) {
-        const autoInitViews = ['crew', 'overview', 'schedule', 'problems'];
-        if (autoInitViews.includes(name)) {
-          setTimeout(() => {
-            const btn = this.spaceEl.querySelector('#getBtn');
-            if (btn && !btn.disabled) btn.click();
-          }, 50);
-        }
+      // Map common utterances to a view id
+      mapUtteranceToView(text) {
+        if (!text) return null;
+        const t = String(text).toLowerCase();
+        if (/\bover(view)?\b/.test(t)) return 'overview';
+        if (/\bschedule|calendar|plan\b/.test(t)) return 'schedule';
+        if (/\bcrew|team|workers?\b/.test(t)) return 'crew';
+        if (/\bproblems?|issues?|risks?\b/.test(t)) return 'problems';
+        return null;
       }
 
-      bootFromHash() {
-        const match = location.hash.match(/^#\/([a-z0-9_-]+)/i);
-        const view = match?.[1];
-        if (view && this.viewMap[view]) {
-          this.loadView(view);
-        }
-      }
-
-      // Unified view extraction
+      // Unified view extraction from structured payloads
       extractView(obj) {
         if (!obj) return null;
-        const normalize = v => typeof v === 'string' ? v.toLowerCase() : null;
-        
-        return normalize(obj.view) || 
-               normalize(obj.name) || 
-               normalize(obj.targetView) || 
-               normalize(obj.target) || 
-               normalize(obj.command) || 
-               normalize(obj.intent?.view) || 
-               normalize(obj.action?.view) || 
-               normalize(obj.payload?.view) || 
-               normalize(obj.metadata?.view);
+        const norm = v => (typeof v === 'string' ? v.toLowerCase() : null);
+        const v =
+          norm(obj.view) ||
+          norm(obj.name) ||
+          norm(obj.targetView) ||
+          norm(obj.target) ||
+          norm(obj.command) ||
+          norm(obj.route) ||
+          norm(obj.page) ||
+          norm(obj.intent?.view) ||
+          norm(obj.action?.view) ||
+          norm(obj.payload?.view) ||
+          norm(obj.metadata?.view) ||
+          norm(obj.metadata?.loadDashboard);
+        if (v && this.viewMap[v]) return v;
+
+        // Fallback: scan all string fields for keywords
+        const scanned = this.scanObjectForView(obj);
+        if (scanned) return scanned;
+
+        return null;
+      }
+
+      // Deep scan object for any string containing a view keyword
+      scanObjectForView(obj) {
+        try {
+          const keys = Object.keys(this.viewMap);
+          const scan = (o) => {
+            if (!o) return null;
+            if (typeof o === 'string') {
+              const m = this.mapUtteranceToView(o);
+              return (m && this.viewMap[m]) ? m : null;
+            }
+            if (Array.isArray(o)) {
+              for (const it of o) {
+                const r = scan(it);
+                if (r) return r;
+              }
+              return null;
+            }
+            if (typeof o === 'object') {
+              for (const k in o) {
+                const v = o[k];
+                if (typeof v === 'string' && keys.includes(v.toLowerCase())) return v.toLowerCase();
+                const r = scan(v);
+                if (r) return r;
+              }
+            }
+            return null;
+          };
+          return scan(obj);
+        } catch { return null; }
       }
 
       showVoiceStatus(message) {
@@ -286,19 +326,17 @@
       }
 
       initVoiceIntegration() {
-        // Unified message handler
         window.addEventListener('message', (event) => {
           try {
             const data = event.data;
             if (!data) return;
 
-            // Handle Vapi widget events
+            if (this.DEBUG) console.debug('[voice] message', data);
+
             if (data.type === 'vapi-widget') {
               this.handleVapiEvent(data);
-            }
-            // Handle custom bridge events
-            else if (data.type === 'opulence') {
-              const view = this.extractView(data) || this.extractView(data.payload);
+            } else if (data.type === 'opulence') {
+              const view = this.extractView(data) || this.extractView(data.payload) || this.mapUtteranceToView(data.text || data.transcript);
               if (view && this.viewMap[view]) this.loadView(view);
             }
           } catch (error) {
@@ -306,7 +344,6 @@
           }
         });
 
-        // Start voice intent polling
         this.startVoicePolling();
       }
 
@@ -318,16 +355,20 @@
           case 'call-end':
             this.showVoiceStatus('👋 Voice call ended');
             break;
-          case 'message':
+          case 'message': {
             const msg = data.message || {};
             if (msg.transcript) this.showVoiceStatus(`"${msg.transcript}"`);
-            
-            const view = this.extractView(msg) || this.extractView(msg.data);
+            const view =
+              this.extractView(msg) ||
+              this.extractView(msg.data) ||
+              this.extractView(msg.metadata) ||
+              this.mapUtteranceToView(msg.transcript || msg.text);
             if (view && this.viewMap[view]) {
               this.loadView(view);
               this.showVoiceStatus(`Switching to ${view}`);
             }
             break;
+          }
         }
       }
 
@@ -335,25 +376,31 @@
         const poll = async () => {
           try {
             const url = new URL('/api/voice-intent', location.origin);
-            if (this.lastToken) url.searchParams.set('since', this.lastToken);
+            if this.lastToken url.searchParams.set('since', this.lastToken);
 
             const response = await fetch(url, { cache: 'no-store' });
             if (!response.ok) return;
 
             const data = await response.json();
-            const token = data.updatedAt || data.ts || data.version;
-            const view = this.extractView(data);
+            if (this.DEBUG) console.debug('[voice] poll', data);
 
-            const hasChanged = data.changed || 
-                             (token && token !== this.lastToken) || 
-                             (view && view !== this.currentView);
+            const token = data.updatedAt ?? data.ts ?? data.version ?? data.rev ?? data.revision ?? null;
+            const view =
+              this.extractView(data) ||
+              this.extractView(data.intent) ||
+              this.extractView(data.payload) ||
+              this.mapUtteranceToView(data.transcript || data.text || data.command);
+
+            const hasChanged = Boolean(data.changed) ||
+                               (token != null && token !== this.lastToken) ||
+                               (view && view !== this.currentView);
 
             if (view && this.viewMap[view] && hasChanged) {
               await this.loadView(view);
               this.showVoiceStatus(`Switched to ${view}`);
             }
 
-            if (token) this.lastToken = token;
+            if (token != null) this.lastToken = token;
           } catch (error) {
             console.warn('[voice] Polling error:', error.message);
           }
