@@ -165,7 +165,8 @@
         this.navEl = document.getElementById('topnav');
         this.currentView = null;
         this.lastToken = null;
-        this.DEBUG = /debug=1/.test(location.search) || localStorage.opulenceDebug === '1';
+        this.DEBUG = true; // Temporarily enabled for debugging
+        if (this.DEBUG) console.log('[DEBUG] Dashboard initialized with debug mode ON');
 
         // NEW: configurable API base (absolute URL) so polling matches where Vapi posts
         this.voiceApiBase = (window.OPULENCE && window.OPULENCE.voiceApiBase) || localStorage.voiceApiBase || '';
@@ -208,9 +209,22 @@
         this.initVoiceIntegration();
       }
 
-      async loadView(name) {
-        if (!this.viewMap[name] || name === this.currentView) return;
+      bootFromHash() {
+        const hash = location.hash.slice(1).replace(/^\//, ''); // Remove # and leading /
+        if (hash && this.viewMap[hash]) {
+          if (this.DEBUG) console.log('[DEBUG] bootFromHash loading view:', hash);
+          this.loadView(hash);
+        }
+      }
 
+      async loadView(name) {
+        if (this.DEBUG) console.log('[DEBUG] loadView called with:', name, 'current:', this.currentView);
+        if (!this.viewMap[name] || name === this.currentView) {
+          if (this.DEBUG) console.log('[DEBUG] loadView rejected - invalid view or same as current');
+          return;
+        }
+
+        if (this.DEBUG) console.log('[DEBUG] Loading view:', name);
         this.updateNavState(name);
         this.showLoading(name);
 
@@ -414,8 +428,11 @@
                                (view && view !== this.currentView);
 
             if (view && this.viewMap[view] && hasChanged) {
+              if (this.DEBUG) console.log('[DEBUG] Voice polling detected view change:', view, 'hasChanged:', hasChanged);
               await this.loadView(view);
               this.showVoiceStatus(`Switched to ${view}`);
+            } else if (this.DEBUG) {
+              console.log('[DEBUG] Voice polling - no view change:', {view, hasChanged, currentView: this.currentView});
             }
 
             if (token != null) this.lastToken = token;
