@@ -166,8 +166,28 @@
         this.currentView = null;
         this.lastToken = null;
         this.DEBUG = /debug=1/.test(location.search) || localStorage.opulenceDebug === '1';
-        
-        this.init();
+
+        // NEW: configurable API base (absolute URL) so polling matches where Vapi posts
+        this.voiceApiBase = (window.OPULENCE && window.OPULENCE.voiceApiBase) || localStorage.voiceApiBase || '';
+        if (this.DEBUG) {
+          console.debug('[voice] voiceApiBase =', this.voiceApiBase || '(same-origin)');
+          if (this.voiceApiBase) {
+            try {
+              const b = new URL(this.voiceApiBase, location.href).origin;
+              if (b !== location.origin) {
+                console.warn('[voice] cross-origin voice API in use:', b, 'dashboard origin:', location.origin);
+              }
+            } catch {}
+          }
+        }
+      }
+
+      // Build a full URL for the voice API
+      buildVoiceUrl(path = '/api/voice-intent') {
+        try {
+          if (this.voiceApiBase) return new URL(path, this.voiceApiBase).toString();
+        } catch {}
+        return new URL(path, location.origin).toString();
       }
 
       init() {
@@ -371,14 +391,15 @@
       async startVoicePolling() {
         const poll = async () => {
           try {
-            const url = new URL('/api/voice-intent', location.origin);
+            const url = new URL(this.buildVoiceUrl('/api/voice-intent'));
             if (this.lastToken) url.searchParams.set('since', this.lastToken);
+            if (this.DEBUG) console.debug('[voice] polling', url.toString());
 
-            const response = await fetch(url, { cache: 'no-store' });
+            const response = await fetch(url.toString(), { cache: 'no-store' });
             if (!response.ok) return;
 
             const data = await response.json();
-            if (this.DEBUG) console.debug('[voice] poll', data);
+            if (this.DEBUG) console.debug('[voice] poll result', data);
 
             const token = data.updatedAt ?? data.ts ?? data.version ?? data.rev ?? data.revision ?? null;
             const view =
@@ -403,7 +424,7 @@
           }
         };
 
-        if (window._voicePollTimer) clearInterval(window._voicePollTimer);
+        try { clearInterval(window._voicePollTimer); } catch {}
         window._voicePollTimer = setInterval(poll, 2000);
       }
     }
@@ -412,8 +433,7 @@
     const dashboard = new DashboardManager();
     window.loadDashboard = (view) => dashboard.loadView(view);
 
-    // Debug helpers:
-    // 1) Toggle verbose logs: press Ctrl/Cmd + D, or run: localStorage.opulenceDebug='1'; location.reload()
+    // Debug helpers
     window.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
         const next = localStorage.opulenceDebug === '1' ? '0' : '1';
@@ -422,18 +442,18 @@
         location.reload();
       }
     });
-    // 2) Manually test the API and routing from DevTools:
-    //    window.voiceTest('crew'|'schedule'|'problems'|'overview')
+
+    // UPDATED: use the same base for manual testing as Vapi
     window.voiceTest = async function(view) {
       try {
-        const r = await fetch('/api/voice-intent', {
+        const url = dashboard.buildVoiceUrl('/api/voice-intent');
+        const r = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ view })
         });
         const j = await r.json();
-        console.log('[voiceTest] POST result:', j);
-        // Immediately force a poll-like apply:
+        console.log('[voiceTest] POST', url, '→', j);
         if (j.view && dashboard.viewMap[j.view]) {
           dashboard.loadView(j.view);
           dashboard.showVoiceStatus(`Switched to ${j.view} (manual)`);
