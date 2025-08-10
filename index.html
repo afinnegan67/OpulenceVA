@@ -182,7 +182,7 @@
         this.bootFromHash();
 
         // If no view loaded via hash, default to overview
-        if (!this.currentView) this.loadView('overview');
+        if (!this.currentView) this.loadView('overview'); // default view
 
         // Voice integration
         this.initVoiceIntegration();
@@ -238,14 +238,11 @@
       executeScripts() {
         // Support inline and external scripts
         this.spaceEl.querySelectorAll("script").forEach(script => {
-          const newScript = document.createElement("script");
-          if (script.src) {
-            newScript.src = script.src;
-          } else {
-            newScript.textContent = script.innerHTML;
-          }
-          document.body.appendChild(newScript);
-          document.body.removeChild(newScript);
+          const s = document.createElement("script");
+          if (script.src) { s.src = script.src; }
+          else { s.textContent = script.innerHTML; }
+          document.body.appendChild(s);
+          document.body.removeChild(s);
         });
       }
 
@@ -330,7 +327,6 @@
           try {
             const data = event.data;
             if (!data) return;
-
             if (this.DEBUG) console.debug('[voice] message', data);
 
             if (data.type === 'vapi-widget') {
@@ -376,7 +372,7 @@
         const poll = async () => {
           try {
             const url = new URL('/api/voice-intent', location.origin);
-            if this.lastToken url.searchParams.set('since', this.lastToken);
+            if (this.lastToken) url.searchParams.set('since', this.lastToken);
 
             const response = await fetch(url, { cache: 'no-store' });
             if (!response.ok) return;
@@ -389,7 +385,8 @@
               this.extractView(data) ||
               this.extractView(data.intent) ||
               this.extractView(data.payload) ||
-              this.mapUtteranceToView(data.transcript || data.text || data.command);
+              this.mapUtteranceToView(data.transcript || data.text || data.command) ||
+              (typeof data.view === 'string' ? data.view.toLowerCase() : null);
 
             const hasChanged = Boolean(data.changed) ||
                                (token != null && token !== this.lastToken) ||
@@ -406,7 +403,6 @@
           }
         };
 
-        // Clear any existing timer
         if (window._voicePollTimer) clearInterval(window._voicePollTimer);
         window._voicePollTimer = setInterval(poll, 2000);
       }
@@ -414,10 +410,39 @@
 
     // Initialize dashboard
     const dashboard = new DashboardManager();
-    
-    // Expose for external access
     window.loadDashboard = (view) => dashboard.loadView(view);
-    
+
+    // Debug helpers:
+    // 1) Toggle verbose logs: press Ctrl/Cmd + D, or run: localStorage.opulenceDebug='1'; location.reload()
+    window.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        const next = localStorage.opulenceDebug === '1' ? '0' : '1';
+        localStorage.opulenceDebug = next;
+        console.log(`[voice] debug ${next === '1' ? 'enabled' : 'disabled'} — reloading`);
+        location.reload();
+      }
+    });
+    // 2) Manually test the API and routing from DevTools:
+    //    window.voiceTest('crew'|'schedule'|'problems'|'overview')
+    window.voiceTest = async function(view) {
+      try {
+        const r = await fetch('/api/voice-intent', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ view })
+        });
+        const j = await r.json();
+        console.log('[voiceTest] POST result:', j);
+        // Immediately force a poll-like apply:
+        if (j.view && dashboard.viewMap[j.view]) {
+          dashboard.loadView(j.view);
+          dashboard.showVoiceStatus(`Switched to ${j.view} (manual)`);
+        }
+      } catch (e) {
+        console.warn('[voiceTest] failed:', e);
+      }
+    };
+
     console.log('Opulence Dashboard initialized');
   </script>
 </body>
