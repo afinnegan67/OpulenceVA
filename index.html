@@ -1,379 +1,77 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Opulence Construction Dashboard</title>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #0e1116;
-      background-image:
-        radial-gradient(1200px 600px at 20% 15%, rgba(56, 102, 163, 0.18), transparent 60%),
-        radial-gradient(1000px 520px at 78% 85%, rgba(34, 80, 140, 0.14), transparent 65%);
-      min-height: 100vh; color:#333;
-    }
-    .container { max-width:1200px; margin:0 auto; padding:2rem; }
-    .header {
-      position: relative;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.18);
-      backdrop-filter: blur(16px) saturate(120%);
-      padding:2rem; border-radius:16px; margin-bottom:1rem;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06),
-                  0 20px 60px rgba(0,0,0,0.25),
-                  0 2px 10px rgba(0,0,0,0.15);
-      text-align:center;
-    }
-    .header::before {
-      content:"";
-      position:absolute; inset:0; border-radius:16px; pointer-events:none;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.12), transparent 30%),
-        linear-gradient(90deg, rgba(255,255,255,.06), transparent 40% 60%, rgba(255,255,255,.05));
-    }
-    .header h1 { color:#ffffff; font-size:2.5rem; margin-bottom:.5rem; }
-    .header p  { color:#e5e7eb; font-size:1.1rem; }
-    .topnav {
-      display:flex; gap:.5rem; justify-content:center; flex-wrap:wrap;
-      margin-bottom:1rem;
-    }
-    .topnav button {
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(255,255,255,0.08);
-      color: #e5e7eb;
-      padding: .6rem 1rem;
-      border-radius: 12px;
-      cursor: pointer;
-      font-weight: 600;
-      backdrop-filter: blur(12px) saturate(120%);
-      box-shadow:
-        inset 0 1px 0 rgba(255,255,255,0.06),
-        0 8px 24px rgba(0,0,0,0.25),
-        0 2px 10px rgba(0,0,0,0.15);
-      transition: transform .12s ease, background .2s ease, border-color .2s ease, box-shadow .2s ease, color .2s ease;
-    }
-    .topnav button:hover {
-      transform: translateY(-1px);
-      background: rgba(255,255,255,0.12);
-      border-color: rgba(255,255,255,0.28);
-    }
-    .topnav button.active {
-      background: linear-gradient(135deg, rgba(96,165,250,0.30), rgba(139,92,246,0.30));
-      border-color: rgba(96,165,250,0.55);
-      color: #ffffff;
-    }
-    .dashboard-space {
-      position: relative;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.18);
-      backdrop-filter: blur(16px) saturate(120%);
-      padding:3rem; border-radius:16px; 
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06),
-                  0 20px 60px rgba(0,0,0,0.25),
-                  0 2px 10px rgba(0,0,0,0.15);
-      min-height:600px; display:flex; align-items:center; justify-content:center; text-align:center;
-    }
-    .dashboard-space::before {
-      content:"";
-      position:absolute; inset:0; border-radius:16px; pointer-events:none;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,.12), transparent 30%),
-        linear-gradient(90deg, rgba(255,255,255,.06), transparent 40% 60%, rgba(255,255,255,.05));
-    }
-    .dashboard-placeholder { color:#e5e7eb; font-size:1.2rem; }
-    .dashboard-placeholder .icon { color:#c7d2fe; opacity:.8; font-size:4rem; margin-bottom:1rem; }
-    .loader {
-      display:inline-block; width:40px; height:40px; border:4px solid #e5e7eb;
-      border-top-color:#4f46e5; border-radius:50%; animation:spin 1s linear infinite;
-      margin-bottom:1rem;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .voice-status {
-      position:fixed; top:30px; right:30px; background:rgba(0,0,0,0.8);
-      color:#fff; padding:1rem 1.5rem; border-radius:25px;
-      backdrop-filter:blur(10px); display:none; z-index:1001;
-    }
-    .voice-status.show { display:block; animation:slideDown .3s ease; }
-    @keyframes slideDown { from{transform:translateY(-100%);opacity:0} to{transform:translateY(0);opacity:1} }
-
-    @media (max-width: 768px) {
-      .container { padding:1rem; }
-      .header h1 { font-size:2rem; }
-      .dashboard-space { padding:2rem; min-height:400px; }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>Opulence for Construction</h1>
-      <p>Voice-Controlled Construction Dashboard</p>
-    </div>
-
-    <div class="topnav" id="topnav">
-      <button data-view="overview" class="active">Overview</button>
-      <button data-view="schedule">Schedule</button>
-      <button data-view="crew">Crew</button>
-      <button data-view="problems">Problems</button>
-    </div>
-
-    <div class="dashboard-space" id="dashboardSpace">
-      <div class="dashboard-placeholder">
-        <div class="icon">📊</div>
-        <p>Dashboard components will be added here</p>
-        <p><em>Click a tab above or use the voice agent to load a view</em></p>
-      </div>
-    </div>
-  </div>
-
-  <vapi-widget
-    public-key="1f96e572-7a5b-4b45-ba8b-0dc2721ca738"
-    assistant-id="d2572015-8bb2-4043-8913-87400a590bc5"
-    mode="voice" theme="dark"
-    base-bg-color="#000000" accent-color="#14B8A6"
-    cta-button-color="#000000" cta-button-text-color="#ffffff"
-    border-radius="large" size="full" position="bottom-right"
-    title="TALK WITH AI" start-button-text="Start" end-button-text="End Call"
-    chat-first-message="Hey, How can I help you today?"
-    voice-show-transcript="true" consent-required="true" 
-    consent-title="Terms and conditions"
-    consent-content="By clicking 'Agree,' I consent to the recording and storage of my communications."
-    consent-storage-key="vapi_widget_consent">
-  </vapi-widget>
-
-  <div class="voice-status" id="voiceStatus">Voice assistant ready</div>
-
-  <script src="https://unpkg.com/@vapi-ai/client-sdk-react/dist/embed/widget.umd.js" async></script>
-
   <script>
-    // Global config
+    // Simplified dashboard loader (reverted to workingindex.html pattern)
     window.OPULENCE = window.OPULENCE || {};
+    const VIEW_MAP = {
+      overview: 'Components/overview.html',
+      schedule: 'Components/schedule.html',
+      crew: 'Components/crew.html',
+      problems: 'Components/problems.html'
+    };
+    const spaceEl = document.getElementById('dashboardSpace');
+    const navEl = document.getElementById('topnav');
 
-    // Single dashboard management system
-    class DashboardManager {
-      constructor() {
-        this.viewMap = {
-          overview: 'Components/overview.html',
-          schedule: 'Components/schedule.html',
-          crew: 'Components/crew.html',
-          problems: 'Components/problems.html'
-        };
-        this.spaceEl = document.getElementById('dashboardSpace');
-        this.navEl = document.getElementById('topnav');
-        this.currentView = null;
-        this.lastToken = null;
-        this.DEBUG = true; // Temporarily enabled for debugging
-        if (this.DEBUG) console.log('[DEBUG] Dashboard initialized with debug mode ON');
-
-        // NEW: configurable API base (absolute URL) so polling matches where Vapi posts
-        this.voiceApiBase = (window.OPULENCE && window.OPULENCE.voiceApiBase) || localStorage.voiceApiBase || '';
-        if (this.DEBUG) {
-          console.debug('[voice] voiceApiBase =', this.voiceApiBase || '(same-origin)');
-          if (this.voiceApiBase) {
-            try {
-              const b = new URL(this.voiceApiBase, location.href).origin;
-              if (b !== location.origin) {
-                console.warn('[voice] cross-origin voice API in use:', b, 'dashboard origin:', location.origin);
-              }
-            } catch {}
-          }
-        }
-      }
-
-      // Build a full URL for the voice API
-      buildVoiceUrl(path = '/api/voice-intent') {
-        try {
-          if (this.voiceApiBase) return new URL(path, this.voiceApiBase).toString();
-        } catch {}
-        return new URL(path, location.origin).toString();
-      }
-
-      init() {
-        // Navigation clicks
-        this.navEl?.addEventListener('click', (e) => {
-          const btn = e.target.closest('button[data-view]');
-          if (btn) this.loadView(btn.dataset.view);
-        });
-
-        // Hash routing
-        window.addEventListener('hashchange', () => this.bootFromHash());
-        this.bootFromHash();
-
-        // If no view loaded via hash, default to overview
-        if (!this.currentView) this.loadView('overview'); // default view
-
-        // Voice integration
-        this.initVoiceIntegration();
-      }
-
-      bootFromHash() {
-        const hash = location.hash.slice(1).replace(/^\//, ''); // Remove # and leading /
-        if (hash && this.viewMap[hash]) {
-          if (this.DEBUG) console.log('[DEBUG] bootFromHash loading view:', hash);
-          this.loadView(hash);
-        }
-      }
-
-      async loadView(name) {
-        if (this.DEBUG) console.log('[DEBUG] loadView called with:', name, 'current:', this.currentView);
-        if (!this.viewMap[name] || name === this.currentView) {
-          if (this.DEBUG) console.log('[DEBUG] loadView rejected - invalid view or same as current');
-          return;
-        }
-
-        if (this.DEBUG) console.log('[DEBUG] Loading view:', name);
-        this.updateNavState(name);
-        this.showLoading(name);
-
-        try {
-          const response = await fetch(this.viewMap[name], { cache: 'no-store' });
-          if (!response.ok) throw new Error(`Failed to load ${name} (${response.status})`);
-          
-          const html = await response.text();
-          this.spaceEl.innerHTML = html;
-          this.executeScripts();
-
-          this.currentView = name;
-          location.hash = `#/${name}`;
-          this.autoInit(name);
-        } catch (error) {
-          this.showError(name, error);
-        }
-      }
-
-      updateNavState(activeView) {
-        this.navEl?.querySelectorAll('button').forEach(btn => {
-          btn.classList.toggle('active', btn.dataset.view === activeView);
-        });
-      }
-
-      showLoading(name) {
-        this.spaceEl.innerHTML = `
-          <div>
-            <div class="loader"></div>
-            <div style="color:#6b7280">Loading ${name}…</div>
-          </div>
-        `;
-      }
-
-      showError(name, error) {
-        this.spaceEl.innerHTML = `
-          <div class="dashboard-placeholder">
-            <div class="icon">⚠️</div>
-            <p>Couldn't load <strong>${name}</strong> view.</p>
-            <p style="color:#6b7280">${error.message}</p>
-          </div>
-        `;
-      }
-
-      executeScripts() {
-        // Support inline and external scripts
-        this.spaceEl.querySelectorAll("script").forEach(script => {
-          const s = document.createElement("script");
-          if (script.src) { s.src = script.src; }
-          else { s.textContent = script.innerHTML; }
-          document.body.appendChild(s);
-          document.body.removeChild(s);
-        });
-      }
-
-      autoInit(name) {
-        // Auto-init: trigger GET on supported dashboards as soon as they load
+    async function loadDashboard(name){
+      const file = VIEW_MAP[name];
+      if(!file) return;
+      // nav state
+      navEl?.querySelectorAll('button').forEach(b=>b.classList.toggle('active', b.dataset.view===name));
+      // loading placeholder
+      spaceEl.innerHTML = `<div><div class="loader"></div><div style="color:#6b7280">Loading ${name}…</div></div>`;
+      try {
+        const r = await fetch(file,{cache:'no-store'});
+        if(!r.ok) throw new Error(`Failed to load ${file} (${r.status})`);
+        const html = await r.text();
+        spaceEl.innerHTML = html;
+        executeScripts(spaceEl);
         const AUTO_INIT = new Set(['crew','overview','schedule','problems']);
-        if (AUTO_INIT.has(name)) {
-          if (this.DEBUG) console.log('[DEBUG] Auto-initializing dashboard:', name);
-          // Find and trigger the refresh/get button in the loaded component
-          setTimeout(() => {
-            const getBtn = document.getElementById('getBtn');
-            if (getBtn && typeof getBtn.click === 'function') {
-              if (this.DEBUG) console.log('[DEBUG] Auto-clicking refresh button for:', name);
-              getBtn.click();
-            }
-          }, 100); // Small delay to ensure DOM is ready
-        }
+        if (AUTO_INIT.has(name)) setTimeout(()=>{ const btn=spaceEl.querySelector('#getBtn'); if(btn && !btn.disabled) btn.click(); },50);
+        location.hash = `#/${name}`; // maintain hash
+      } catch(e){
+        spaceEl.innerHTML = `<div class="dashboard-placeholder"><div class="icon">⚠️</div><p>Couldn't load <strong>${name}</strong>.</p><p style=\"color:#6b7280\">${e.message}</p></div>`;
       }
+    }
 
-      // Map common utterances to a view id
-      mapUtteranceToView(text) {
-        if (!text) return null;
-        const t = String(text).toLowerCase();
-        if (/\bover(view)?\b/.test(t)) return 'overview';
-        if (/\bschedule|calendar|plan\b/.test(t)) return 'schedule';
-        if (/\bcrew|team|workers?\b/.test(t)) return 'crew';
-        if (/\bproblems?|issues?|risks?\b/.test(t)) return 'problems';
-        return null;
+    function executeScripts(container){
+      container.querySelectorAll('script').forEach(sc=>{ const s=document.createElement('script'); if(sc.src) s.src=sc.src; else s.textContent=sc.innerHTML; document.body.appendChild(s); document.body.removeChild(s); });
+    }
+    window.loadDashboard = loadDashboard;
+    navEl?.addEventListener('click', e=>{ const btn=e.target.closest('button[data-view]'); if(btn) loadDashboard(btn.dataset.view); });
+    function bootFromHash(){ const m=location.hash.match(/^#\/(\w+)/); const v=m&&m[1]; if(v && VIEW_MAP[v]) loadDashboard(v); }
+    window.addEventListener('hashchange', bootFromHash); bootFromHash();
+    if(!location.hash) loadDashboard('overview');
+
+    // Voice widget bridge & status
+    function showVoiceStatus(msg){ const el=document.getElementById('voiceStatus'); if(!el) return; el.textContent=msg; el.classList.add('show'); setTimeout(()=>el.classList.remove('show'),3000);}    
+    window.addEventListener('message', ev=>{ const d=ev.data; if(!d) return; if(d.type==='vapi-widget'){ if(d.event==='call-start') showVoiceStatus('🎤 Voice call started'); else if(d.event==='call-end') showVoiceStatus('👋 Voice call ended'); else if(d.event==='message' && d.message?.transcript) showVoiceStatus(`"${d.message.transcript}"`); } if(d.type==='opulence' && d.action==='loadDashboard'){ const v=String(d.name||'').toLowerCase(); if(VIEW_MAP[v]) loadDashboard(v); }});
+
+    // Simple polling for /api/voice-intent
+    (function(){
+      const ALLOWED=new Set(['overview','schedule','crew','problems']);
+      let lastUpdate=0;
+      async function poll(){
+        try{
+          const u=new URL('/api/voice-intent', location.origin);
+          if(lastUpdate) u.searchParams.set('since', lastUpdate);
+          const res=await fetch(u.toString(),{cache:'no-store'});
+          if(!res.ok) return;
+          const j=await res.json();
+            if(j.updatedAt && j.updatedAt>lastUpdate) lastUpdate=j.updatedAt;
+            const view=String(j.view||'').toLowerCase();
+            if(j.changed && ALLOWED.has(view)) loadDashboard(view);
+        }catch(e){ console.warn('[voice] poll error', e.message); }
       }
+      try{ clearInterval(window._voicePollTimer);}catch{}
+      window._voicePollTimer=setInterval(poll,2000);
+    })();
 
-      // Unified view extraction from structured payloads
-      extractView(obj) {
-        if (!obj) return null;
-        const norm = v => (typeof v === 'string' ? v.toLowerCase() : null);
-        const v =
-          norm(obj.view) ||
-          norm(obj.name) ||
-          norm(obj.targetView) ||
-          norm(obj.target) ||
-          norm(obj.command) ||
-          norm(obj.route) ||
-          norm(obj.page) ||
-          norm(obj.intent?.view) ||
-          norm(obj.action?.view) ||
-          norm(obj.payload?.view) ||
-          norm(obj.metadata?.view) ||
-          norm(obj.metadata?.loadDashboard);
-        if (v && this.viewMap[v]) return v;
+    // Manual tester
+    window.voiceTest = async function(view){ try { const r=await fetch('/api/voice-intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({view})}); const j=await r.json(); console.log('[voiceTest]', j); if(j.view && VIEW_MAP[j.view]) loadDashboard(j.view); } catch(e){ console.warn(e);} };
 
-        // Fallback: scan all string fields for keywords
-        const scanned = this.scanObjectForView(obj);
-        if (scanned) return scanned;
-
-        return null;
-      }
-
-      // Deep scan object for any string containing a view keyword
-      scanObjectForView(obj) {
-        try {
-          const keys = Object.keys(this.viewMap);
-          const scan = (o) => {
-            if (!o) return null;
-            if (typeof o === 'string') {
-              const m = this.mapUtteranceToView(o);
-              return (m && this.viewMap[m]) ? m : null;
-            }
-            if (Array.isArray(o)) {
-              for (const it of o) {
-                const r = scan(it);
-                if (r) return r;
-              }
-              return null;
-            }
-            if (typeof o === 'object') {
-              for (const k in o) {
-                const v = o[k];
-                if (typeof v === 'string' && keys.includes(v.toLowerCase())) return v.toLowerCase();
-                const r = scan(v);
-                if (r) return r;
-              }
-            }
-            return null;
-          };
-          return scan(obj);
-        } catch { return null; }
-      }
-
-      showVoiceStatus(message) {
-        const status = document.getElementById('voiceStatus');
-        if (!status) return;
-        status.textContent = message;
-        status.classList.add('show');
-        setTimeout(() => status.classList.remove('show'), 3000);
-      }
-
-      initVoiceIntegration() {
-        window.addEventListener('message', (event) => {
+    console.log('Opulence Dashboard initialized (simplified mode)');
+  </script>
           try {
             const data = event.data;
             if (!data) return;
