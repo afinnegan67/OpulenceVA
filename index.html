@@ -454,6 +454,13 @@
               this.mapUtteranceToView(data.transcript || data.text || data.command) ||
               (typeof data.view === 'string' ? data.view.toLowerCase() : null);
 
+            // If this is the very first poll, seed token and do NOT treat existing state as a change.
+            if (this.lastToken == null && token != null) {
+              this.lastToken = token;
+              if (this.DEBUG) console.log('[voice] Initial poll seeded token; ignoring stale view:', view);
+              return; // skip processing first poll to avoid stale auto-switch
+            }
+
             const hasChanged = Boolean(data.changed) ||
                                (token != null && token !== this.lastToken) ||
                                (view && view !== this.currentView);
